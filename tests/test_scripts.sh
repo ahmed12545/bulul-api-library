@@ -34,6 +34,7 @@ echo "=== Shell script smoke checks ==="
 # ── setup_kaggle.sh ──────────────────────────────────────────────────────────
 S="$REPO_ROOT/setup_kaggle.sh"
 check_syntax "$S"
+check_contains "$S" "conda tos accept" "accepts Anaconda channel ToS"
 check_contains "$S" "conda create" "creates conda env"
 check_contains "$S" "conda activate" "activates env"
 check_contains "$S" "pip install" "installs python deps"

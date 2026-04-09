@@ -29,7 +29,12 @@ export PATH="$MINICONDA_DIR/bin:$PATH"
 # shellcheck source=/dev/null
 source "$MINICONDA_DIR/etc/profile.d/conda.sh"
 
-# ── 3. Create conda environment if it does not exist ─────────────────────────
+# ── 3. Accept Anaconda channel Terms of Service (required in non-interactive environments) ──
+log "Accepting Anaconda channel Terms of Service…"
+conda tos accept --override-channels --channel https://repo.anaconda.com/pkgs/main || true
+conda tos accept --override-channels --channel https://repo.anaconda.com/pkgs/r    || true
+
+# ── 4. Create conda environment if it does not exist ─────────────────────────
 if conda env list | grep -qE "^${CONDA_ENV_NAME}\s"; then
     log "Conda env '${CONDA_ENV_NAME}' already exists — skipping creation"
 else
@@ -38,7 +43,7 @@ else
         die "Failed to create conda env"
 fi
 
-# ── 4. Activate env and install Python dependencies ──────────────────────────
+# ── 5. Activate env and install Python dependencies ──────────────────────────
 log "Activating conda env '${CONDA_ENV_NAME}'…"
 conda activate "$CONDA_ENV_NAME"
 
@@ -48,11 +53,11 @@ log "Installing Python dependencies from requirements.txt…"
 pip install --quiet --upgrade pip
 pip install --quiet -r "$REQS" || die "pip install failed"
 
-# ── 5. Download models (inside activated env) ─────────────────────────────────
+# ── 6. Download models (inside activated env) ─────────────────────────────────
 log "Running model download script inside conda env…"
 bash "$SCRIPT_DIR/download_models.sh" || die "Model download failed"
 
-# ── 6. Create runtime directories ─────────────────────────────────────────────
+# ── 7. Create runtime directories ─────────────────────────────────────────────
 mkdir -p "$SCRIPT_DIR/runtime/tmp"
 log "Runtime directories ready"
 
