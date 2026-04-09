@@ -103,6 +103,71 @@ print("  • Run 'bash host_service.sh' to start the API.")
 print("  • Run 'bash tests/test.sh --help' for voice generation options.")
 ```
 
+### Quick voice generation cell (Kaggle — after setup)
+
+After setup completes, paste this into the **next Kaggle cell** to generate
+audio and preview the results.  `test.sh` already prints heartbeats every 30 s
+so the cell never appears silent.
+
+```python
+import subprocess, time, glob
+from IPython.display import Audio, display
+
+REPO_DIR = "/kaggle/working/bulul-api-library"
+OUT_DIR  = "/kaggle/working/voice_tests"
+
+# Runs StyleTTS2 + 6-voice RVC batch.
+# If you haven't added RVC .pth models to models/rvc/ yet, swap the last line for:
+#   f" --no-rvc"
+cmd = (
+    f"cd {REPO_DIR} && bash tests/test.sh"
+    f" --config tests/podcast_6voices.yaml"
+    f" --output-dir {OUT_DIR}"
+)
+
+p = subprocess.Popen(
+    ["bash", "-lc", cmd],
+    stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+    text=True, bufsize=1,
+)
+start, timeout = time.time(), 3600
+for line in iter(p.stdout.readline, ""):
+    print(line, end="", flush=True)
+    if time.time() - start > timeout:
+        p.kill()
+        print("\n[TIMEOUT] killed after 60 min")
+        break
+p.wait()
+print(f"\n[exit {p.returncode}] ({time.time()-start:.0f}s)")
+
+if p.returncode == 0:
+    files = sorted(
+        glob.glob(f"{OUT_DIR}/*.wav") + glob.glob(f"{OUT_DIR}/*.mp3")
+    )
+    print(f"\nGenerated {len(files)} file(s):")
+    for f in files:
+        print(f"  {f}")
+        display(Audio(f))
+```
+
+For **StyleTTS2 only** (no RVC voice models required):
+
+```python
+# Same wrapper as above, but pass --no-rvc
+cmd = (
+    f"cd {REPO_DIR} && bash tests/test.sh"
+    f" --no-rvc"
+    f" --output-dir {OUT_DIR}"
+)
+```
+
+> **Correct flag names** (use exactly as shown — do **not** use `--out_dir`):
+> - `--output-dir DIR` — output directory
+> - `--config FILE` — YAML config for batch voices (e.g. `tests/podcast_6voices.yaml`)
+> - `--text TEXT` — override synthesis text
+> - `--no-rvc` — skip RVC step (StyleTTS2 output only)
+> - `--verbose` — stream all subprocess output to the cell
+
 ### Step 4 — Call the endpoint
 ```bash
 # Replace <PUBLIC_URL> with the ngrok URL printed in step 3
