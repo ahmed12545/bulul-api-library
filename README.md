@@ -24,6 +24,9 @@ This will:
 - Clone the StyleTTS2 source tree into `models/StyleTTS2/` (it has no `setup.py`, so it cannot be pip-installed)
 - Install StyleTTS2's runtime dependencies inside the conda env
 - Download the StyleTTS2 model weights into `models/styletts2/`
+- Clone the RVC (Retrieval-based Voice Conversion) source into `models/RVC/`
+- Install RVC's runtime dependencies inside the conda env
+- Create `models/rvc/` for user-supplied RVC voice checkpoints
 - Set up `HF_HOME`, `TRANSFORMERS_CACHE`, and `TORCH_HOME` cache directories under `/kaggle/working/.cache/`
 
 > **Note:** The script is idempotent — re-running it safely skips already-complete steps.
@@ -46,30 +49,43 @@ The script will:
 
 ### Quick Kaggle cell (clone + setup + model download)
 
-Paste this into a Kaggle code cell to run the full setup end-to-end:
+Paste this into a Kaggle code cell to run the full setup end-to-end with live
+progress output (no hanging):
 
 ```python
-import os, subprocess
+import subprocess, time, os
 
 REPO_URL = "https://github.com/ahmed12545/bulul-api-library.git"
 REPO_DIR = "/kaggle/working/bulul-api-library"
 
-def run(cmd, check=True):
+def run_streaming(cmd):
+    """Run a shell command and stream output line-by-line to avoid Kaggle hangs."""
     print(f"\n$ {cmd}")
-    subprocess.run(cmd, shell=True, text=True, check=check)
+    p = subprocess.Popen(cmd, shell=True, stdout=subprocess.PIPE,
+                         stderr=subprocess.STDOUT, text=True, bufsize=1)
+    start = time.time()
+    for line in p.stdout:
+        print(line, end="", flush=True)
+    p.wait()
+    print(f"[exit {p.returncode}] ({time.time()-start:.0f}s)")
+    if p.returncode != 0:
+        raise RuntimeError(f"Command failed: {cmd}")
 
 # 1) Clone fresh (remove old copy if present)
 if os.path.exists(REPO_DIR):
-    run(f"rm -rf {REPO_DIR}")
-run(f"git clone {REPO_URL} {REPO_DIR}")
+    run_streaming(f"rm -rf {REPO_DIR}")
+run_streaming(f"git clone {REPO_URL} {REPO_DIR}")
 
 # 2) Make scripts executable
-run(f"chmod +x {REPO_DIR}/setup_kaggle.sh {REPO_DIR}/download_models.sh {REPO_DIR}/host_service.sh")
+run_streaming(f"chmod +x {REPO_DIR}/setup_kaggle.sh {REPO_DIR}/download_models.sh "
+              f"{REPO_DIR}/host_service.sh {REPO_DIR}/tests/test.sh")
 
-# 3) Run full setup (Miniconda + conda env + deps + model clone + checkpoint download)
-run(f"cd {REPO_DIR} && bash setup_kaggle.sh")
+# 3) Run full setup (Miniconda + conda env + deps + StyleTTS2 + RVC)
+run_streaming(f"cd {REPO_DIR} && bash setup_kaggle.sh")
 
-print("\n✅ Setup complete — run 'bash host_service.sh' to start the API.")
+print("\n✅ Setup complete.")
+print("  • Run 'bash host_service.sh' to start the API.")
+print("  • Run 'bash tests/test.sh --help' for voice generation options.")
 ```
 
 ### Step 4 — Call the endpoint
@@ -151,21 +167,111 @@ bash tests/test_scripts.sh
 
 ---
 
+## StyleTTS2 + RVC voice pipeline
+
+The repository supports an end-to-end pipeline:
+
+1. **StyleTTS2** synthesises natural-sounding speech from text (preserving prosody and realism).
+2. **RVC** converts the voice identity to any target speaker while keeping the timing intact.
+
+### Required assets
+
+| Asset | Path | How to obtain |
+|---|---|---|
+| StyleTTS2 checkpoint | `models/styletts2/epoch_2nd_00100.pth` | Downloaded by `bash setup_kaggle.sh` |
+| StyleTTS2 config | `models/styletts2/config.yml` | Downloaded by `bash setup_kaggle.sh` |
+| StyleTTS2 source | `models/StyleTTS2/` | Cloned by `bash setup_kaggle.sh` |
+| RVC source | `models/RVC/` | Cloned by `bash setup_kaggle.sh` |
+| RVC voice model | `models/rvc/<name>.pth` | **You supply** — see below |
+| RVC index (optional) | `models/rvc/<name>.index` | **You supply** — see below |
+
+### Obtaining RVC voice models
+
+1. Search for pre-trained voices at <https://huggingface.co/models?search=rvc>.
+2. Download the `.pth` checkpoint (and optionally the `.index` file).
+3. Place them in `models/rvc/`:
+
+```
+models/rvc/
+├── my_voice.pth
+└── my_voice.index   ← optional but recommended
+```
+
+### Running the pipeline manually
+
+```bash
+# Step 1 — Synthesise with StyleTTS2
+python -u scripts/synthesize.py \
+    --text "Welcome to the podcast." \
+    --output /tmp/base.wav
+
+# Step 2 — Convert voice with RVC
+python -u scripts/rvc_convert.py \
+    --input  /tmp/base.wav \
+    --output /tmp/converted.wav \
+    --model  models/rvc/my_voice.pth \
+    --index  models/rvc/my_voice.index \
+    --pitch  0
+```
+
+### End-to-end test script (`tests/test.sh`)
+
+`tests/test.sh` runs both steps in sequence with Kaggle-friendly progress output
+(heartbeat lines every 30 s, unbuffered Python `-u`, per-step timeouts).
+
+```bash
+# Basic run (StyleTTS2 only — no RVC model required)
+bash tests/test.sh --text "Hello, this is a test."
+
+# Full pipeline (StyleTTS2 → RVC)
+bash tests/test.sh \
+    --text        "Hello, this is a test." \
+    --voice-model models/rvc/my_voice.pth \
+    --voice-index models/rvc/my_voice.index \
+    --output-dir  /kaggle/working/voice_tests
+
+# All options
+bash tests/test.sh --help
+```
+
+Output files are written to `--output-dir` (default: `/kaggle/working/voice_tests`
+on Kaggle, `./output/voice_tests` elsewhere):
+
+| File | Description |
+|---|---|
+| `base_styletts2.wav` | Raw StyleTTS2 output |
+| `rvc_<model_name>.wav` | RVC-converted output |
+
+### Kaggle anti-hang notes
+
+- All Python steps are run with `python -u` (unbuffered stdout/stderr).
+- A background heartbeat process prints `[heartbeat] still running…` every 30 s.
+- Per-step `timeout` guards prevent silent hangs for very long operations.
+- Every significant action emits a timestamped log line.
+
+---
+
 ## Project structure
 
 ```
 bulul-api-library/
 ├── app.py               # FastAPI service
-├── setup_kaggle.sh      # Miniconda + env + deps + model setup
-├── download_models.sh   # StyleTTS2 source clone + checkpoint download (idempotent)
+├── setup_kaggle.sh      # Miniconda + env + deps + model setup (StyleTTS2 + RVC)
+├── download_models.sh   # StyleTTS2 + RVC source clone + checkpoint download (idempotent)
 ├── host_service.sh      # Start API + ngrok tunnel (sets PYTHONPATH for StyleTTS2)
 ├── requirements.txt     # Python dependencies
 ├── .env.example         # Example environment variables
+├── scripts/
+│   ├── synthesize.py    # StyleTTS2 inference helper (unbuffered, Kaggle-friendly)
+│   └── rvc_convert.py   # RVC voice-conversion helper (unbuffered, Kaggle-friendly)
 ├── models/
 │   ├── StyleTTS2/       # Cloned StyleTTS2 source (added to PYTHONPATH at runtime)
-│   └── styletts2/       # Downloaded model weights (gitignored)
+│   ├── styletts2/       # Downloaded StyleTTS2 model weights (gitignored)
+│   ├── RVC/             # Cloned RVC source (gitignored)
+│   └── rvc/             # User-supplied RVC voice checkpoints (gitignored)
 ├── runtime/tmp/         # Temp audio files (auto-deleted, gitignored)
 └── tests/
     ├── test_app.py      # API route tests
-    └── test_scripts.sh  # Shell script smoke checks
+    ├── test_scripts.sh  # Shell script smoke checks
+    └── test.sh          # End-to-end StyleTTS2 → RVC test with heartbeat logging
 ```

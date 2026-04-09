@@ -77,7 +77,55 @@ log "Step 5: Validating model artifacts…"
 [ -f "$CKPT_FILE" ]          || die "Checkpoint missing at $CKPT_FILE"
 [ -f "$CONFIG_FILE" ]        || die "Config missing at $CONFIG_FILE"
 
-log "✅ All model artifacts ready"
+log "✅ StyleTTS2 artifacts ready"
 log "   StyleTTS2 source : $STYLETTS2_SRC"
 log "   Checkpoint       : $CKPT_FILE"
 log "   Config           : $CONFIG_FILE"
+
+# ── RVC source (clone) ────────────────────────────────────────────────────────
+RVC_SRC="$SCRIPT_DIR/models/RVC"
+RVC_REPO="https://github.com/RVC-Project/Retrieval-based-Voice-Conversion-WebUI.git"
+RVC_MODELS_DIR="$SCRIPT_DIR/models/rvc"
+
+log "Step 6: Checking RVC source tree…"
+if [ -d "$RVC_SRC/.git" ]; then
+    log "RVC source already present at $RVC_SRC — skipping clone"
+else
+    log "Cloning RVC source (shallow)…"
+    git clone --depth 1 "$RVC_REPO" "$RVC_SRC" || \
+        die "Failed to clone RVC from $RVC_REPO"
+    log "RVC source cloned to $RVC_SRC"
+fi
+
+# ── Install RVC runtime dependencies ──────────────────────────────────────────
+log "Step 7: Installing RVC runtime dependencies…"
+RVC_REQS="$RVC_SRC/requirements.txt"
+if [ -f "$RVC_REQS" ]; then
+    python -m pip install --quiet -r "$RVC_REQS" || \
+        log "WARNING: Some RVC pip dependencies failed — voice conversion may not work"
+    log "RVC dependencies installed"
+else
+    log "WARNING: $RVC_SRC/requirements.txt not found — installing known core RVC deps"
+    python -m pip install --quiet \
+        fairseq praat-parselmouth pyworld resampy ffmpeg-python || \
+        log "WARNING: Some RVC core dependencies failed — voice conversion may not work"
+    log "RVC core dependencies installed"
+fi
+
+# ── RVC model directory (user-supplied checkpoints) ───────────────────────────
+log "Step 8: Checking RVC model directory…"
+mkdir -p "$RVC_MODELS_DIR"
+if ls "$RVC_MODELS_DIR"/*.pth 2>/dev/null | grep -q .; then
+    log "RVC model checkpoint(s) found:"
+    ls "$RVC_MODELS_DIR"/*.pth | while read -r f; do log "  $f"; done
+else
+    log "NOTE: No RVC .pth checkpoints found in $RVC_MODELS_DIR/"
+    log "  → Place your RVC voice model files (.pth and optional .index) in:"
+    log "      $RVC_MODELS_DIR/"
+    log "  → Download models from https://huggingface.co/models?search=rvc"
+    log "  → The StyleTTS2→RVC pipeline will skip conversion until a model is provided"
+fi
+
+log "✅ All setup artifacts ready"
+log "   RVC source       : $RVC_SRC"
+log "   RVC models dir   : $RVC_MODELS_DIR"
