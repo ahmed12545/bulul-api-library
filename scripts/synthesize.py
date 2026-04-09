@@ -17,6 +17,13 @@ import sys
 import time
 from pathlib import Path
 
+# ── Headless / Kaggle compatibility defaults ──────────────────────────────────
+# Set before importing matplotlib-dependent or torch-dependent modules so that
+# headless environments (Kaggle, CI) don't fail with a display-backend or
+# weights_only error.  Explicit exports in the caller always take precedence.
+os.environ.setdefault("MPLBACKEND", "Agg")
+os.environ.setdefault("TORCH_FORCE_NO_WEIGHTS_ONLY_LOAD", "1")
+
 
 def log(msg: str) -> None:
     print(f"[synthesize] {msg}", flush=True)
@@ -49,6 +56,9 @@ def main() -> None:
         help="Embedding scale / style strength (default: 1.0)",
     )
     args = parser.parse_args()
+
+    log(f"{'MPLBACKEND':<35}: {os.environ.get('MPLBACKEND')}")
+    log(f"{'TORCH_FORCE_NO_WEIGHTS_ONLY_LOAD':<35}: {os.environ.get('TORCH_FORCE_NO_WEIGHTS_ONLY_LOAD')}")
 
     repo_root = Path(__file__).parent.parent
     ckpt = Path(args.ckpt) if args.ckpt else repo_root / "models/styletts2/epoch_2nd_00100.pth"
