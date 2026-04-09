@@ -31,11 +31,22 @@ source "$MINICONDA_DIR/etc/profile.d/conda.sh"
 conda activate "$CONDA_ENV_NAME" || \
     die "Could not activate conda env '${CONDA_ENV_NAME}'. Run setup_kaggle.sh first."
 
-# ── 3. Configure ngrok ────────────────────────────────────────────────────────
+# ── 3. Export PYTHONPATH so styletts2 source tree is importable ───────────────
+# StyleTTS2 has no setup.py so it is cloned into models/StyleTTS2.
+# Adding it to PYTHONPATH lets app.py do `from styletts2 import tts`.
+STYLETTS2_SRC="$SCRIPT_DIR/models/StyleTTS2"
+if [ -d "$STYLETTS2_SRC" ]; then
+    export PYTHONPATH="${STYLETTS2_SRC}:${PYTHONPATH:-}"
+    log "PYTHONPATH includes StyleTTS2 source at $STYLETTS2_SRC"
+else
+    log "WARNING: $STYLETTS2_SRC not found. Run setup_kaggle.sh first to clone StyleTTS2. App will start in stub mode (silent audio only)."
+fi
+
+# ── 4. Configure ngrok ────────────────────────────────────────────────────────
 log "Configuring ngrok…"
 ngrok config add-authtoken "$NGROK_AUTHTOKEN" 2>/dev/null || true
 
-# ── 4. Start the API server in the background ─────────────────────────────────
+# ── 5. Start the API server in the background ─────────────────────────────────
 log "Starting API server on port ${APP_PORT}…"
 cd "$SCRIPT_DIR"
 uvicorn app:app \
@@ -48,7 +59,7 @@ log "API server PID: $API_PID"
 # Wait briefly so the server is up before ngrok connects
 sleep 3
 
-# ── 5. Open ngrok tunnel ──────────────────────────────────────────────────────
+# ── 6. Open ngrok tunnel ──────────────────────────────────────────────────────
 log "Opening ngrok tunnel to port ${APP_PORT}…"
 ngrok http "$APP_PORT" --log=stdout &
 NGROK_PID=$!
@@ -67,7 +78,7 @@ log "   Podcast endpoint: $PUBLIC_URL/generate-podcast"
 log ""
 log "Press Ctrl+C to stop."
 
-# ── 6. Wait and handle shutdown ───────────────────────────────────────────────
+# ── 7. Wait and handle shutdown ───────────────────────────────────────────────
 cleanup() {
     log "Shutting down…"
     kill "$API_PID" 2>/dev/null || true

@@ -53,12 +53,17 @@ log "Installing Python dependencies from requirements.txt…"
 pip install --quiet --upgrade pip
 pip install --quiet -r "$REQS" || die "pip install failed"
 
-# ── 6. Download models (inside activated env) ─────────────────────────────────
-log "Running model download script inside conda env…"
-bash "$SCRIPT_DIR/download_models.sh" || die "Model download failed"
+# ── 6. Download models (explicitly inside conda env) ─────────────────────────
+# Use `conda run` to guarantee the script executes inside the conda env even
+# in non-interactive shells (e.g. Kaggle Jupyter) where `conda activate`
+# alone may not propagate fully to subshells.
+log "Running model download script inside conda env '${CONDA_ENV_NAME}'…"
+conda run -n "$CONDA_ENV_NAME" bash "$SCRIPT_DIR/download_models.sh" || \
+    die "Model download failed"
 
 # ── 7. Create runtime directories ─────────────────────────────────────────────
 mkdir -p "$SCRIPT_DIR/runtime/tmp"
 log "Runtime directories ready"
 
 log "✅ Setup complete. Run 'bash host_service.sh' to start the API."
+log "   (StyleTTS2 source is at $SCRIPT_DIR/models/StyleTTS2 — add to PYTHONPATH as needed)"
