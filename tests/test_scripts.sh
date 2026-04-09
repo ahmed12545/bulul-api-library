@@ -45,6 +45,10 @@ check_contains "$S" "download_models.sh" "calls download_models.sh"
 check_contains "$S" "HF_HOME" "sets HF_HOME cache var"
 check_contains "$S" "TORCH_HOME" "sets TORCH_HOME cache var"
 check_contains "$S" "set -euo pipefail" "fail-fast enabled"
+check_contains "$S" "bulul-styletts2" "creates bulul-styletts2 env"
+check_contains "$S" "bulul-rvc" "creates bulul-rvc env"
+check_contains "$S" "BULUL_ENV_RVC" "passes RVC env name to download_models.sh"
+check_contains "$S" "\-\-verbose" "supports --verbose flag"
 
 # ── download_models.sh ────────────────────────────────────────────────────────
 S="$REPO_ROOT/download_models.sh"
@@ -59,6 +63,8 @@ check_contains "$S" "\-\-tries" "uses wget --tries for retry"
 check_contains "$S" "set -euo pipefail" "fail-fast enabled"
 check_contains "$S" "RVC" "references RVC setup"
 check_contains "$S" "models/rvc" "creates RVC models directory"
+check_contains "$S" "ENV_RVC" "uses per-model RVC env variable"
+check_contains "$S" "pip.*24" "applies pip version pin for fairseq compatibility"
 
 # ── tests/test.sh ─────────────────────────────────────────────────────────────
 S="$REPO_ROOT/tests/test.sh"
@@ -70,7 +76,24 @@ check_contains "$S" "timeout" "uses timeout guard for long steps"
 check_contains "$S" "\-\-text" "accepts --text argument"
 check_contains "$S" "\-\-output-dir" "accepts --output-dir argument"
 check_contains "$S" "\-\-voice-model" "accepts --voice-model argument"
+check_contains "$S" "\-\-config" "accepts --config argument"
+check_contains "$S" "\-\-verbose" "accepts --verbose flag"
 check_contains "$S" "set -euo pipefail" "fail-fast enabled"
+check_contains "$S" "bulul-styletts2" "uses bulul-styletts2 env for TTS"
+check_contains "$S" "bulul-rvc" "uses bulul-rvc env for RVC"
+
+# ── tests/podcast_6voices.yaml ────────────────────────────────────────────────
+S="$REPO_ROOT/tests/podcast_6voices.yaml"
+if [ -f "$S" ]; then
+    ok "file exists — $S"
+    if grep -q "voices:" "$S"; then
+        ok "contains voices list — $S"
+    else
+        fail "missing voices list — $S"
+    fi
+else
+    fail "missing file — $S"
+fi
 
 # ── scripts/synthesize.py ────────────────────────────────────────────────────
 S="$REPO_ROOT/scripts/synthesize.py"
@@ -113,6 +136,7 @@ check_contains "$S" "PYTHONPATH" "exports PYTHONPATH for StyleTTS2"
 check_contains "$S" "uvicorn" "starts uvicorn"
 check_contains "$S" "ngrok" "starts ngrok"
 check_contains "$S" "set -euo pipefail" "fail-fast enabled"
+check_contains "$S" "bulul-styletts2" "uses bulul-styletts2 env for API"
 
 # ── Summary ───────────────────────────────────────────────────────────────────
 echo ""

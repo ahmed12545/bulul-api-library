@@ -1,0 +1,47 @@
+# tests/podcast_6voices.yaml — 6-voice podcast test configuration
+#
+# Usage:
+#   bash tests/test.sh --config tests/podcast_6voices.yaml
+#
+# Before running, place your RVC voice model files in models/rvc/:
+#   models/rvc/speaker1.pth   (and optionally speaker1.index, etc.)
+#
+# Download pre-trained RVC voice models from:
+#   https://huggingface.co/models?search=rvc
+#
+# To generate files without RVC voice models (StyleTTS2 only):
+#   bash tests/test.sh --text "Your text here." --no-rvc
+
+# Optional: override the synthesized text
+text: "Welcome back to the Daily Insight podcast. Today we break down top stories in technology and culture, with fast context and practical takeaways you can use immediately."
+
+voices:
+  - label: speaker1
+    model: models/rvc/speaker1.pth
+    index: models/rvc/speaker1.index   # optional — remove line if no .index file
+    pitch: 0
+
+  - label: speaker2
+    model: models/rvc/speaker2.pth
+    index: models/rvc/speaker2.index
+    pitch: 0
+
+  - label: speaker3
+    model: models/rvc/speaker3.pth
+    index: models/rvc/speaker3.index
+    pitch: 0
+
+  - label: speaker4
+    model: models/rvc/speaker4.pth
+    index: models/rvc/speaker4.index
+    pitch: 0
+
+  - label: speaker5
+    model: models/rvc/speaker5.pth
+    index: models/rvc/speaker5.index
+    pitch: 0
+
+  - label: speaker6
+    model: models/rvc/speaker6.pth
+    index: models/rvc/speaker6.index
+    pitch: 0

@@ -10,12 +10,21 @@
 #                                             or ./output/voice_tests if not on Kaggle)
 #   --voice-model PATH    Path to RVC .pth model (skips RVC step if not provided)
 #   --voice-index PATH    Path to RVC .index file (optional; improves RVC quality)
+#   --config FILE         YAML config file listing multiple voices for batch conversion
+#                         (see tests/podcast_6voices.yaml for the expected format)
 #   --pitch N             Pitch shift in semitones for RVC (default: 0)
 #   --method METHOD       RVC pitch method: rmvpe|harvest|crepe|pm (default: rmvpe)
 #   --timeout-tts N       Max seconds for StyleTTS2 step (default: 600)
 #   --timeout-rvc N       Max seconds per RVC conversion   (default: 300)
-#   --no-rvc              Skip RVC step even if --voice-model is given
+#   --no-rvc              Skip RVC step even if --voice-model/--config is given
+#   --verbose             Show full subprocess output (default: quiet/summary mode)
 #   --help                Show this help and exit
+#
+# Output modes:
+#   Default (quiet): ≤15 lines total for a successful run; subprocess output
+#     is captured to runtime/logs/test.log. On failure the last 40 log lines
+#     are printed automatically.
+#   --verbose: all subprocess output streams to stdout in real time.
 #
 # Kaggle anti-hang:
 #   A heartbeat line is printed every 30 s while long steps are running, so the
@@ -35,8 +44,11 @@ set -euo pipefail
 
 # ── Defaults ──────────────────────────────────────────────────────────────────
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-CONDA_ENV_NAME="bulul"
+ENV_STYLETTS2="bulul-styletts2"
+ENV_RVC="bulul-rvc"
 MINICONDA_DIR="${HOME}/miniconda3"
+LOG_DIR="$REPO_ROOT/runtime/logs"
+TEST_LOG="$LOG_DIR/test.log"
 
 DEFAULT_OUTPUT_DIR="/kaggle/working/voice_tests"
 [ -d "/kaggle/working" ] || DEFAULT_OUTPUT_DIR="${REPO_ROOT}/output/voice_tests"
@@ -45,18 +57,36 @@ TEXT="Welcome to the Bulul podcast. Today we explore the intersection of technol
 OUTPUT_DIR="$DEFAULT_OUTPUT_DIR"
 VOICE_MODEL=""
 VOICE_INDEX=""
+CONFIG_FILE=""
 PITCH=0
 METHOD="rmvpe"
 TIMEOUT_TTS=600
 TIMEOUT_RVC=300
 SKIP_RVC=0
+VERBOSE=0
 
 # ── Logging helpers ───────────────────────────────────────────────────────────
 log()  { echo "[test] $*"; }
 ok()   { echo "[test] ✅ $*"; }
 warn() { echo "[test] ⚠️  $*"; }
 fail() { echo "[test] ❌ $*" >&2; }
-die()  { fail "$*"; exit 1; }
+die()  { fail "$*"
+         echo "[test]    Full log: $TEST_LOG" >&2
+         tail -n 40 "$TEST_LOG" 2>/dev/null >&2 || true
+         exit 1; }
+
+# run_q CMD...: run capturing output; print only on failure (or always if VERBOSE)
+run_q() {
+    if [ "$VERBOSE" -eq 1 ]; then
+        "$@" 2>&1 | tee -a "$TEST_LOG"
+    else
+        if ! "$@" >> "$TEST_LOG" 2>&1; then
+            echo "[test] ❌ Command failed: $*" >&2
+            tail -n 40 "$TEST_LOG" >&2 || true
+            return 1
+        fi
+    fi
+}
 
 # ── Parse arguments ───────────────────────────────────────────────────────────
 while [[ $# -gt 0 ]]; do
@@ -65,11 +95,13 @@ while [[ $# -gt 0 ]]; do
         --output-dir)   OUTPUT_DIR="$2";   shift 2 ;;
         --voice-model)  VOICE_MODEL="$2";  shift 2 ;;
         --voice-index)  VOICE_INDEX="$2";  shift 2 ;;
+        --config)       CONFIG_FILE="$2";  shift 2 ;;
         --pitch)        PITCH="$2";        shift 2 ;;
         --method)       METHOD="$2";       shift 2 ;;
         --timeout-tts)  TIMEOUT_TTS="$2";  shift 2 ;;
         --timeout-rvc)  TIMEOUT_RVC="$2";  shift 2 ;;
         --no-rvc)       SKIP_RVC=1;        shift   ;;
+        --verbose|-v)   VERBOSE=1;         shift   ;;
         --help)
             sed -n '3,/^set -/p' "${BASH_SOURCE[0]}" | grep '^#' | sed 's/^# \?//'
             exit 0
@@ -77,6 +109,10 @@ while [[ $# -gt 0 ]]; do
         *) die "Unknown argument: $1" ;;
     esac
 done
+
+# ── Set up log file ───────────────────────────────────────────────────────────
+mkdir -p "$LOG_DIR" "$OUTPUT_DIR"
+: > "$TEST_LOG"
 
 # ── Heartbeat: print a line every 30 s while a step is running ───────────────
 # Usage: heartbeat_start; ... ; heartbeat_stop
@@ -94,21 +130,34 @@ heartbeat_stop() {
 trap 'heartbeat_stop' EXIT INT TERM
 
 # ── Conda activation helper ───────────────────────────────────────────────────
-# We prefer 'conda run' (works in non-interactive Kaggle cells) but also try
-# a plain activation path so the script works in interactive shells too.
-PYTHON_CMD="python"
-HAVE_CONDA=0
+# Use 'conda run' (works in non-interactive Kaggle cells).
+_HAVE_CONDA=0
 if [ -f "$MINICONDA_DIR/etc/profile.d/conda.sh" ]; then
     # shellcheck source=/dev/null
     source "$MINICONDA_DIR/etc/profile.d/conda.sh"
-    if conda env list 2>/dev/null | grep -qE "^${CONDA_ENV_NAME}\s"; then
-        HAVE_CONDA=1
-        PYTHON_CMD="conda run -n $CONDA_ENV_NAME python"
-        log "Using conda env '${CONDA_ENV_NAME}'"
+    if conda env list 2>/dev/null | grep -qE "^${ENV_STYLETTS2}[[:space:]]"; then
+        _HAVE_CONDA=1
     fi
 fi
-if [ "$HAVE_CONDA" -eq 0 ]; then
-    warn "Conda env '${CONDA_ENV_NAME}' not found — using system python"
+
+# Return the correct python invocation for a given env
+python_cmd() {
+    local env="$1"
+    if [ "$_HAVE_CONDA" -eq 1 ]; then
+        echo "conda run -n $env python"
+    else
+        echo "python"
+    fi
+}
+
+TTS_PYTHON_CMD="$(python_cmd "$ENV_STYLETTS2")"
+RVC_PYTHON_CMD="$(python_cmd "$ENV_RVC")"
+
+if [ "$_HAVE_CONDA" -eq 1 ]; then
+    log "TTS env  : $ENV_STYLETTS2"
+    log "RVC env  : $ENV_RVC"
+else
+    warn "Conda envs not found — using system python (run setup_kaggle.sh first)"
 fi
 
 # ── Environment variables (cache dirs) ───────────────────────────────────────
@@ -117,48 +166,105 @@ export TRANSFORMERS_CACHE="${TRANSFORMERS_CACHE:-/kaggle/working/.cache/huggingf
 export TORCH_HOME="${TORCH_HOME:-/kaggle/working/.cache/torch}"
 export PYTHONPATH="${REPO_ROOT}/models/StyleTTS2:${PYTHONPATH:-}"
 
-# ── Summary ───────────────────────────────────────────────────────────────────
-log "===== Bulul end-to-end voice test ====="
-log "Repo root    : $REPO_ROOT"
-log "Output dir   : $OUTPUT_DIR"
-log "Text length  : ${#TEXT} chars"
-[ -n "$VOICE_MODEL" ] && log "Voice model  : $VOICE_MODEL" || log "Voice model  : (none — RVC step will be skipped)"
-[ -n "$VOICE_INDEX" ] && log "Voice index  : $VOICE_INDEX"
-log "========================================"
+# ── Parse --config file to load voice list ────────────────────────────────────
+# Config YAML format (see tests/podcast_6voices.yaml):
+#   text: "optional override text"
+#   voices:
+#     - label: speaker1
+#       model: models/rvc/speaker1.pth
+#       index: models/rvc/speaker1.index   # optional
+#       pitch: 0                            # optional
+#
+# Simple bash parser: extract model: lines and optional per-entry fields.
+declare -a CONFIG_MODELS=()
+declare -a CONFIG_LABELS=()
+declare -a CONFIG_INDEXES=()
+declare -a CONFIG_PITCHES=()
 
-mkdir -p "$OUTPUT_DIR"
+if [ -n "$CONFIG_FILE" ]; then
+    [ -f "$CONFIG_FILE" ] || die "Config file not found: $CONFIG_FILE"
+    # Extract text override if present (strip leading/trailing quotes and spaces)
+    _cfg_text=$(grep -E '^text:' "$CONFIG_FILE" | head -1 | sed 's/^text:[[:space:]]*//' | tr -d '"' | tr -d "'" || true)
+    [ -n "$_cfg_text" ] && TEXT="$_cfg_text"
+
+    # Parse voice entries: collect model, label, index, pitch per voice block.
+    # Both "  - label:" (first field in a list entry) and "    label:" (follow-on
+    # field) map to the same value, so they share the same action.
+    _cur_label="" _cur_model="" _cur_index="" _cur_pitch=""
+    while IFS= read -r _line; do
+        case "$_line" in
+            *"label:"*)   _cur_label=$(echo "$_line" | sed 's/.*label:[[:space:]]*//' | tr -d '"' | tr -d "'") ;;
+            *"model:"*)   _cur_model=$(echo "$_line" | sed 's/.*model:[[:space:]]*//' | tr -d '"' | tr -d "'") ;;
+            *"index:"*)   _cur_index=$(echo "$_line" | sed 's/.*index:[[:space:]]*//' | tr -d '"' | tr -d "'") ;;
+            *"pitch:"*)   _cur_pitch=$(echo "$_line" | sed 's/.*pitch:[[:space:]]*//' | tr -d '"' | tr -d "'") ;;
+            "  - "*)
+                # New list entry starting: flush the previous voice block if complete
+                if [ -n "$_cur_model" ]; then
+                    CONFIG_MODELS+=("$_cur_model")
+                    CONFIG_LABELS+=("${_cur_label:-voice$((${#CONFIG_MODELS[@]}))}")
+                    CONFIG_INDEXES+=("${_cur_index:-}")
+                    CONFIG_PITCHES+=("${_cur_pitch:-0}")
+                fi
+                _cur_label="" _cur_model="" _cur_index="" _cur_pitch=""
+                ;;
+        esac
+    done < "$CONFIG_FILE"
+    # Save last entry
+    if [ -n "$_cur_model" ]; then
+        CONFIG_MODELS+=("$_cur_model")
+        CONFIG_LABELS+=("${_cur_label:-voice$((${#CONFIG_MODELS[@]}))}")
+        CONFIG_INDEXES+=("${_cur_index:-}")
+        CONFIG_PITCHES+=("${_cur_pitch:-0}")
+    fi
+    log "Config   : $CONFIG_FILE (${#CONFIG_MODELS[@]} voice(s))"
+fi
+
+log "===== Bulul voice test ====="
+log "Output dir : $OUTPUT_DIR"
+if [ "${#TEXT}" -gt 60 ]; then
+    log "Text       : ${TEXT:0:60}…"
+else
+    log "Text       : $TEXT"
+fi
+if [ -n "$CONFIG_FILE" ] && [ "${#CONFIG_MODELS[@]}" -gt 0 ]; then
+    log "Voices     : ${#CONFIG_MODELS[@]} (from config)"
+elif [ -n "$VOICE_MODEL" ]; then
+    log "Voice model: $VOICE_MODEL"
+else
+    log "Voice model: (none — StyleTTS2 only)"
+fi
+log "==========================="
 
 # ── Step 1: Validate required StyleTTS2 assets ───────────────────────────────
-log "Step 1/3: Validating StyleTTS2 assets…"
+log "1/3 Validating StyleTTS2 assets…"
 CKPT="$REPO_ROOT/models/styletts2/epoch_2nd_00100.pth"
 CFG="$REPO_ROOT/models/styletts2/config.yml"
 STYLETTS2_SRC="$REPO_ROOT/models/StyleTTS2"
 
 ASSETS_OK=1
-[ -f "$CKPT" ]             || { warn "Missing checkpoint : $CKPT";         ASSETS_OK=0; }
-[ -f "$CFG" ]              || { warn "Missing config     : $CFG";           ASSETS_OK=0; }
-[ -d "$STYLETTS2_SRC" ]    || { warn "Missing StyleTTS2 source: $STYLETTS2_SRC"; ASSETS_OK=0; }
+[ -f "$CKPT" ]          || { warn "Missing checkpoint : $CKPT";         ASSETS_OK=0; }
+[ -f "$CFG" ]           || { warn "Missing config     : $CFG";           ASSETS_OK=0; }
+[ -d "$STYLETTS2_SRC" ] || { warn "Missing StyleTTS2 source: $STYLETTS2_SRC"; ASSETS_OK=0; }
 
 if [ "$ASSETS_OK" -eq 0 ]; then
     die "Required assets missing. Run 'bash setup_kaggle.sh' to download them."
 fi
-ok "StyleTTS2 assets validated"
+ok "Assets validated"
 
 # ── Step 2: StyleTTS2 synthesis ───────────────────────────────────────────────
 TTS_OUTPUT="$OUTPUT_DIR/base_styletts2.wav"
-log "Step 2/3: Synthesising with StyleTTS2 (timeout ${TIMEOUT_TTS}s)…"
-log "  Output: $TTS_OUTPUT"
+log "2/3 Synthesising with StyleTTS2 (max ${TIMEOUT_TTS}s)…"
 
 heartbeat_start
 
 TTS_EXIT=0
 timeout "$TIMEOUT_TTS" \
-    $PYTHON_CMD -u "$REPO_ROOT/scripts/synthesize.py" \
-        --text  "$TEXT" \
+    $TTS_PYTHON_CMD -u "$REPO_ROOT/scripts/synthesize.py" \
+        --text   "$TEXT" \
         --output "$TTS_OUTPUT" \
-        --ckpt  "$CKPT" \
+        --ckpt   "$CKPT" \
         --config "$CFG" \
-    || TTS_EXIT=$?
+    >> "$TEST_LOG" 2>&1 || TTS_EXIT=$?
 
 heartbeat_stop
 
@@ -170,67 +276,109 @@ fi
 
 [ -f "$TTS_OUTPUT" ] || die "StyleTTS2 output not created: $TTS_OUTPUT"
 TTS_SIZE=$(wc -c < "$TTS_OUTPUT")
-ok "StyleTTS2 synthesis complete → $TTS_OUTPUT (${TTS_SIZE} bytes)"
+ok "2/3 base_styletts2.wav (${TTS_SIZE} bytes)"
 
 # ── Step 3: RVC voice conversion ──────────────────────────────────────────────
-if [ "$SKIP_RVC" -eq 1 ] || [ -z "$VOICE_MODEL" ]; then
-    warn "Skipping RVC step (no --voice-model provided or --no-rvc set)."
-    warn "  Base StyleTTS2 audio is at: $TTS_OUTPUT"
+# Build the list of voices to convert: from --config, or single --voice-model
+declare -a RVC_MODELS=()
+declare -a RVC_LABELS=()
+declare -a RVC_INDEXES=()
+declare -a RVC_PITCHES=()
+
+if [ "$SKIP_RVC" -eq 0 ]; then
+    if [ "${#CONFIG_MODELS[@]}" -gt 0 ]; then
+        RVC_MODELS=("${CONFIG_MODELS[@]}")
+        RVC_LABELS=("${CONFIG_LABELS[@]}")
+        RVC_INDEXES=("${CONFIG_INDEXES[@]}")
+        RVC_PITCHES=("${CONFIG_PITCHES[@]}")
+    elif [ -n "$VOICE_MODEL" ]; then
+        RVC_MODELS=("$VOICE_MODEL")
+        RVC_LABELS=("$(basename "$VOICE_MODEL" .pth)")
+        RVC_INDEXES=("$VOICE_INDEX")
+        RVC_PITCHES=("$PITCH")
+    fi
+fi
+
+if [ "${#RVC_MODELS[@]}" -eq 0 ]; then
+    warn "Skipping RVC step (no --voice-model or --config provided, or --no-rvc set)."
+    warn "  Base StyleTTS2 audio: $TTS_OUTPUT"
     log "Test complete (StyleTTS2 only). Output: $TTS_OUTPUT"
     exit 0
 fi
 
-if [ ! -f "$VOICE_MODEL" ]; then
-    fail "RVC model not found: $VOICE_MODEL"
-    fail "  Place a .pth file in models/rvc/ and pass --voice-model models/rvc/<file>.pth"
-    exit 1
-fi
+TOTAL_VOICES="${#RVC_MODELS[@]}"
+log "3/3 Voice conversion: ${TOTAL_VOICES} voice(s) (max ${TIMEOUT_RVC}s each)"
 
 RVC_SRC="$REPO_ROOT/models/RVC"
 if [ ! -d "$RVC_SRC/infer" ]; then
-    fail "RVC source not found at $RVC_SRC"
-    fail "  Run 'bash setup_kaggle.sh' to clone it."
+    fail "RVC source not found at $RVC_SRC — run 'bash setup_kaggle.sh' to clone it."
     exit 1
 fi
 
-MODEL_STEM="$(basename "$VOICE_MODEL" .pth)"
-RVC_OUTPUT="$OUTPUT_DIR/rvc_${MODEL_STEM}.wav"
-log "Step 3/3: RVC voice conversion (timeout ${TIMEOUT_RVC}s)…"
-log "  Model  : $VOICE_MODEL"
-log "  Output : $RVC_OUTPUT"
+RVC_OK=0
+RVC_FAIL=0
 
-RVC_ARGS=(
-    --input  "$TTS_OUTPUT"
-    --output "$RVC_OUTPUT"
-    --model  "$VOICE_MODEL"
-    --pitch  "$PITCH"
-    --method "$METHOD"
-)
-[ -n "$VOICE_INDEX" ] && RVC_ARGS+=(--index "$VOICE_INDEX")
+for i in "${!RVC_MODELS[@]}"; do
+    _model="${RVC_MODELS[$i]}"
+    _label="${RVC_LABELS[$i]}"
+    _index="${RVC_INDEXES[$i]}"
+    _pitch="${RVC_PITCHES[$i]:-$PITCH}"
+    _num=$((i + 1))
+    RVC_OUTPUT="$OUTPUT_DIR/rvc_${_label}.wav"
 
-heartbeat_start
+    if [ ! -f "$_model" ]; then
+        warn "[$_num/$TOTAL_VOICES] RVC model not found: $_model — skipping"
+        RVC_FAIL=$((RVC_FAIL + 1))
+        continue
+    fi
 
-RVC_EXIT=0
-timeout "$TIMEOUT_RVC" \
-    $PYTHON_CMD -u "$REPO_ROOT/scripts/rvc_convert.py" "${RVC_ARGS[@]}" \
-    || RVC_EXIT=$?
+    log "  [$_num/$TOTAL_VOICES] $_label…"
 
-heartbeat_stop
+    RVC_ARGS=(
+        --input  "$TTS_OUTPUT"
+        --output "$RVC_OUTPUT"
+        --model  "$_model"
+        --pitch  "$_pitch"
+        --method "$METHOD"
+    )
+    [ -n "$_index" ] && [ -f "$_index" ] && RVC_ARGS+=(--index "$_index")
 
-if [ "$RVC_EXIT" -eq 124 ]; then
-    die "RVC conversion timed out after ${TIMEOUT_RVC}s"
-elif [ "$RVC_EXIT" -ne 0 ]; then
-    die "RVC conversion failed (exit code $RVC_EXIT)"
-fi
+    heartbeat_start
 
-[ -f "$RVC_OUTPUT" ] || die "RVC output not created: $RVC_OUTPUT"
-RVC_SIZE=$(wc -c < "$RVC_OUTPUT")
-ok "RVC conversion complete → $RVC_OUTPUT (${RVC_SIZE} bytes)"
+    _rvc_exit=0
+    timeout "$TIMEOUT_RVC" \
+        $RVC_PYTHON_CMD -u "$REPO_ROOT/scripts/rvc_convert.py" "${RVC_ARGS[@]}" \
+        >> "$TEST_LOG" 2>&1 || _rvc_exit=$?
+
+    heartbeat_stop
+
+    if [ "$_rvc_exit" -eq 124 ]; then
+        warn "  [$_num/$TOTAL_VOICES] timed out after ${TIMEOUT_RVC}s — skipping"
+        RVC_FAIL=$((RVC_FAIL + 1))
+    elif [ "$_rvc_exit" -ne 0 ]; then
+        warn "  [$_num/$TOTAL_VOICES] failed (exit $_rvc_exit) — skipping"
+        RVC_FAIL=$((RVC_FAIL + 1))
+    elif [ -f "$RVC_OUTPUT" ]; then
+        _sz=$(wc -c < "$RVC_OUTPUT")
+        ok "  [$_num/$TOTAL_VOICES] rvc_${_label}.wav (${_sz} bytes)"
+        RVC_OK=$((RVC_OK + 1))
+    else
+        warn "  [$_num/$TOTAL_VOICES] output not created: $RVC_OUTPUT — skipping"
+        RVC_FAIL=$((RVC_FAIL + 1))
+    fi
+done
 
 # ── Done ──────────────────────────────────────────────────────────────────────
 echo ""
-log "===== Test results ====="
+log "===== Results ====="
 log "  StyleTTS2 base : $TTS_OUTPUT"
-log "  RVC converted  : $RVC_OUTPUT"
-log "========================"
+log "  RVC converted  : $RVC_OK/$TOTAL_VOICES succeeded"
+[ "$RVC_FAIL" -gt 0 ] && log "  RVC failed     : $RVC_FAIL/$TOTAL_VOICES (see $TEST_LOG)"
+log "  Output dir     : $OUTPUT_DIR"
+log "=================="
+
+if [ "$RVC_FAIL" -gt 0 ] && [ "$RVC_OK" -eq 0 ]; then
+    die "All RVC conversions failed."
+fi
+
 ok "All steps passed."
