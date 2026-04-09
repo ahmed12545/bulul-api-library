@@ -20,10 +20,13 @@ This will:
 - Install Miniconda if not already present
 - Accept Anaconda channel Terms of Service (required in non-interactive environments)
 - Create a `bulul` conda environment with Python 3.10
-- Install all Python dependencies from `requirements.txt`
+- Install all Python dependencies from `requirements.txt` inside the conda env (uses `conda run` for reliability in non-interactive shells)
 - Clone the StyleTTS2 source tree into `models/StyleTTS2/` (it has no `setup.py`, so it cannot be pip-installed)
 - Install StyleTTS2's runtime dependencies inside the conda env
 - Download the StyleTTS2 model weights into `models/styletts2/`
+- Set up `HF_HOME`, `TRANSFORMERS_CACHE`, and `TORCH_HOME` cache directories under `/kaggle/working/.cache/`
+
+> **Note:** The script is idempotent — re-running it safely skips already-complete steps.
 
 ### Step 3 — Start the service
 ```bash
@@ -34,9 +37,12 @@ You will be prompted for:
 - **ngrok auth token** — get one at <https://dashboard.ngrok.com>
 
 The script will:
-1. Activate the `bulul` conda env and set `PYTHONPATH` to include the cloned StyleTTS2 source
-2. Start the FastAPI server on port 8000
-3. Open an ngrok tunnel and print the public URL
+1. Activate the `bulul` conda env and export `HF_HOME`, `TRANSFORMERS_CACHE`, and `TORCH_HOME` cache dirs
+2. Set `PYTHONPATH` to include the cloned StyleTTS2 source
+3. Start the FastAPI server on port 8000
+4. Open an ngrok tunnel and print the public URL
+
+> **Note:** On first run after setup the StyleTTS2 model weights are read into memory — this can take several minutes. Subsequent starts are faster.
 
 ### Quick Kaggle cell (clone + setup + model download)
 
