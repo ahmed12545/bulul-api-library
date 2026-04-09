@@ -113,6 +113,11 @@ REQS="$SCRIPT_DIR/requirements.txt"
 run_q conda run -n "$ENV_STYLETTS2" pip install --quiet --upgrade pip
 run_q conda run -n "$ENV_STYLETTS2" pip install --quiet -r "$REQS" || \
     die "pip install failed in '$ENV_STYLETTS2'"
+# Belt-and-suspenders: install the styletts2 pip package and einops_exts
+# explicitly.  requirements.txt also lists them, but making it explicit here
+# ensures they are present even when requirements.txt is out of sync.
+run_q conda run -n "$ENV_STYLETTS2" pip install --quiet "styletts2==0.1.6" "einops_exts" || \
+    warn "styletts2/einops_exts install had warnings — check $SETUP_LOG"
 log_v "  Python dependencies installed in '$ENV_STYLETTS2'"
 
 # ── 6. Create HuggingFace / Torch cache directories ──────────────────────────

@@ -76,6 +76,15 @@ else
     warn "$STYLETTS2_SRC/requirements.txt not found — skipping dep install"
 fi
 
+# Install the styletts2 pip package (provides the `styletts2.tts.StyleTTS2`
+# inference API used by scripts/synthesize.py) and einops_exts.
+# The yl4579/StyleTTS2 source tree uses a training layout with no installable
+# Python package, so we need the pip wrapper explicitly.
+log_v "  Installing styletts2 pip package and einops_exts…"
+run_q python -m pip install --quiet "styletts2==0.1.6" "einops_exts" || \
+    warn "styletts2/einops_exts install had warnings — synthesis may fail. See $DL_LOG"
+log_v "  styletts2 pip package installed"
+
 # ── Pretrained checkpoint (LJSpeech single-speaker, ~0.5 GB) ─────────────────
 log "Step 3/8 Checking StyleTTS2 checkpoint…"
 CKPT_URL="https://huggingface.co/yl4579/StyleTTS2-LJSpeech/resolve/main/Models/LJSpeech/epoch_2nd_00100.pth"

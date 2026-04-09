@@ -23,6 +23,7 @@ This will:
   - `bulul-styletts2` — StyleTTS2 TTS synthesis + API server
   - `bulul-rvc` — RVC voice conversion (isolated to avoid dependency conflicts)
 - Install Python dependencies from `requirements.txt` in `bulul-styletts2`
+- Install the **`styletts2` pip package** (provides the `styletts2.tts.StyleTTS2` inference API used by `scripts/synthesize.py`) and `einops_exts`
 - Clone the StyleTTS2 source tree into `models/StyleTTS2/`
 - Install StyleTTS2's runtime dependencies in `bulul-styletts2`
 - Download the StyleTTS2 model weights into `models/styletts2/`
@@ -316,6 +317,16 @@ to the cell.
 - A background heartbeat process prints `[heartbeat] still running…` every 30 s.
 - Per-step `timeout` guards prevent silent hangs.
 - Default quiet mode keeps cell output under 15 lines for normal runs.
+
+### Troubleshooting
+
+| Symptom | Cause | Fix |
+|---|---|---|
+| `No module named 'styletts2'` | `styletts2` pip package not installed in active env | Run `bash setup_kaggle.sh` or `pip install 'styletts2==0.1.6' einops_exts` |
+| `No module named 'einops_exts'` | Missing dep for the yl4579 source tree | Same as above |
+| `mamba: error: unrecognized arguments: -n …` | Kaggle's `mamba` is a Python test-runner, not the conda extension | `tests/test.sh` now skips PATH-based `mamba`; uses `conda` or `micromamba` only |
+| `No working conda/micromamba env runner found` | Conda envs not set up in this session | Run `bash setup_kaggle.sh` first, or ensure Miniconda is at `~/miniconda3` |
+| `No module named 'styletts2'` with `models/StyleTTS2` in `sys.path` | That tree is the yl4579 training layout (no `styletts2/` sub-package) | Install the pip package; setup now does this automatically |
 
 ---
 
