@@ -1,0 +1,22 @@
+# Runtime artifacts
+runtime/tmp/
+models/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+dist/
+build/
+.env
+
+# Virtual envs / conda (not the repo's own env file)
+venv/
+.venv/
+env/
+
+# Editor
+.vscode/
+.idea/
+*.swp
