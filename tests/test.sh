@@ -129,35 +129,51 @@ heartbeat_stop() {
 }
 trap 'heartbeat_stop' EXIT INT TERM
 
-# ── Conda activation helper ───────────────────────────────────────────────────
-# Use 'conda run' (works in non-interactive Kaggle cells).
-_HAVE_CONDA=0
+# ── Env runner detection ──────────────────────────────────────────────────────
+# Detect a working env runner: conda (from known Miniconda path) or micromamba.
+# NOTE: We deliberately skip a bare PATH-based 'mamba' check because on Kaggle
+#       that binary is a Python test-runner (not the conda-extension mamba) and
+#       rejects '-n ENV cmd' arguments — causing misleading failures.
+_ENV_RUNNER=""   # "conda" | "micromamba" | "" (direct python fallback)
+
+# 1. Try conda from the known Miniconda path (reliable, avoids fake mamba).
 if [ -f "$MINICONDA_DIR/etc/profile.d/conda.sh" ]; then
     # shellcheck source=/dev/null
     source "$MINICONDA_DIR/etc/profile.d/conda.sh"
     if conda env list 2>/dev/null | grep -qE "^${ENV_STYLETTS2}[[:space:]]"; then
-        _HAVE_CONDA=1
+        _ENV_RUNNER="conda"
     fi
 fi
 
-# Return the correct python invocation for a given env
+# 2. If conda didn't work, try micromamba (common in Kaggle / CI; no conda.sh needed).
+if [ -z "$_ENV_RUNNER" ] && command -v micromamba >/dev/null 2>&1; then
+    if micromamba env list 2>/dev/null | grep -qE "^${ENV_STYLETTS2}[[:space:]]"; then
+        _ENV_RUNNER="micromamba"
+    fi
+fi
+
+# Return the correct python invocation prefix for a given env.
 python_cmd() {
     local env="$1"
-    if [ "$_HAVE_CONDA" -eq 1 ]; then
-        echo "conda run -n $env python"
-    else
-        echo "python"
-    fi
+    case "$_ENV_RUNNER" in
+        conda)      echo "conda run -n $env python" ;;
+        micromamba) echo "micromamba run -n $env python" ;;
+        *)          echo "python" ;;
+    esac
 }
 
 TTS_PYTHON_CMD="$(python_cmd "$ENV_STYLETTS2")"
 RVC_PYTHON_CMD="$(python_cmd "$ENV_RVC")"
 
-if [ "$_HAVE_CONDA" -eq 1 ]; then
-    log "TTS env  : $ENV_STYLETTS2"
-    log "RVC env  : $ENV_RVC"
+if [ -n "$_ENV_RUNNER" ]; then
+    log "Env runner : $_ENV_RUNNER"
+    log "TTS env    : $ENV_STYLETTS2"
+    log "RVC env    : $ENV_RVC"
 else
-    warn "Conda envs not found — using system python (run setup_kaggle.sh first)"
+    warn "No working conda/micromamba env runner found for '$ENV_STYLETTS2'."
+    warn "  Tried: conda (at $MINICONDA_DIR/etc/profile.d/conda.sh), micromamba (in PATH)."
+    warn "  Falling back to system python — ensure all deps are installed in the active env."
+    warn "  To set up conda environments, run: bash setup_kaggle.sh"
 fi
 
 # ── Environment variables (cache dirs) ───────────────────────────────────────

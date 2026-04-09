@@ -90,8 +90,24 @@ def main() -> None:
     try:
         from styletts2 import tts as styletts2_tts  # type: ignore[import]
     except ImportError as exc:
-        log(f"ERROR: Could not import StyleTTS2: {exc}")
-        log("Make sure StyleTTS2 source is present at models/StyleTTS2/")
+        log(f"ERROR: Could not import StyleTTS2 pip package: {exc}")
+        # Diagnose the local source tree layout to give an actionable message.
+        _py_files = sorted(styletts2_src.glob("*.py")) if styletts2_src.is_dir() else []
+        _has_pkg = (styletts2_src / "styletts2").is_dir()
+        if _has_pkg:
+            log("  models/StyleTTS2/styletts2/ directory found but import still failed.")
+            log("  Possible cause: missing dependency (e.g. einops_exts, phonemizer).")
+        elif _py_files:
+            _names = [f.name for f in _py_files[:6]]
+            log(f"  models/StyleTTS2 contains {len(_py_files)} .py file(s): {_names} …")
+            log("  This is the yl4579/StyleTTS2 training-layout tree — it does NOT")
+            log("  expose an installable 'styletts2' Python package on its own.")
+        else:
+            log("  models/StyleTTS2 is empty or missing Python files.")
+        log("  Fix: install the pip package in your active environment:")
+        log("    pip install 'styletts2==0.1.6' einops_exts")
+        log("  Or re-run setup to install all dependencies:")
+        log("    bash setup_kaggle.sh")
         sys.exit(1)
 
     log("Loading model (may take a few minutes on first run)…")
