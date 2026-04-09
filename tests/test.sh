@@ -182,6 +182,14 @@ export TRANSFORMERS_CACHE="${TRANSFORMERS_CACHE:-/kaggle/working/.cache/huggingf
 export TORCH_HOME="${TORCH_HOME:-/kaggle/working/.cache/torch}"
 export PYTHONPATH="${REPO_ROOT}/models/StyleTTS2:${PYTHONPATH:-}"
 
+# ── Runtime compatibility defaults (Kaggle / headless) ───────────────────────
+# Use the non-interactive Agg matplotlib backend and relax torch weights_only
+# loading so synthesis works in display-less environments.
+# Both can be overridden by exporting the variable before calling this script.
+export MPLBACKEND="${MPLBACKEND:-Agg}"
+export TORCH_FORCE_NO_WEIGHTS_ONLY_LOAD="${TORCH_FORCE_NO_WEIGHTS_ONLY_LOAD:-1}"
+log "Runtime: MPLBACKEND=$MPLBACKEND  TORCH_FORCE_NO_WEIGHTS_ONLY_LOAD=$TORCH_FORCE_NO_WEIGHTS_ONLY_LOAD"
+
 # ── Parse --config file to load voice list ────────────────────────────────────
 # Config YAML format (see tests/podcast_6voices.yaml):
 #   text: "optional override text"

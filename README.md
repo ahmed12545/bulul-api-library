@@ -318,6 +318,25 @@ to the cell.
 - Per-step `timeout` guards prevent silent hangs.
 - Default quiet mode keeps cell output under 15 lines for normal runs.
 
+### Headless / Kaggle compatibility defaults
+
+`tests/test.sh` and `scripts/synthesize.py` automatically set the following
+environment variables if they are **not already exported** in the caller's
+environment:
+
+| Variable | Default | Purpose |
+|---|---|---|
+| `MPLBACKEND` | `Agg` | Non-interactive matplotlib backend — avoids `cannot connect to X server` errors in display-less environments |
+| `TORCH_FORCE_NO_WEIGHTS_ONLY_LOAD` | `1` | Relaxes PyTorch's `weights_only=True` default — fixes `UnpicklingError` / `FutureWarning` when loading older checkpoints |
+
+To **override** either default, export the variable before calling the script:
+
+```bash
+export MPLBACKEND=TkAgg          # use a different backend
+export TORCH_FORCE_NO_WEIGHTS_ONLY_LOAD=0   # re-enable strict weights_only
+bash tests/test.sh --text "Hello." --no-rvc
+```
+
 ### Troubleshooting
 
 | Symptom | Cause | Fix |
@@ -327,6 +346,8 @@ to the cell.
 | `mamba: error: unrecognized arguments: -n …` | Kaggle's `mamba` is a Python test-runner, not the conda extension | `tests/test.sh` now skips PATH-based `mamba`; uses `conda` or `micromamba` only |
 | `No working conda/micromamba env runner found` | Conda envs not set up in this session | Run `bash setup_kaggle.sh` first, or ensure Miniconda is at `~/miniconda3` |
 | `No module named 'styletts2'` with `models/StyleTTS2` in `sys.path` | That tree is the yl4579 training layout (no `styletts2/` sub-package) | Install the pip package; setup now does this automatically |
+| `cannot connect to X server` / matplotlib display errors | matplotlib tries to use a GUI backend in a headless environment | `MPLBACKEND=Agg` is now set by default; export a different value to override |
+| `UnpicklingError` / `weights_only` warning when loading checkpoint | PyTorch ≥2.0 changed the default to `weights_only=True`, which rejects older pickled checkpoints | `TORCH_FORCE_NO_WEIGHTS_ONLY_LOAD=1` is now set by default; export `0` to restore strict mode |
 
 ---
 
