@@ -1,5 +1,6 @@
 # Runtime artifacts
 runtime/tmp/
+runtime/logs/
 models/
 
 # Python

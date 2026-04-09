@@ -4,7 +4,8 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-CONDA_ENV_NAME="bulul"
+# The API uses StyleTTS2; run it inside the bulul-styletts2 env.
+CONDA_ENV_NAME="bulul-styletts2"
 MINICONDA_DIR="$HOME/miniconda3"
 APP_PORT="${APP_PORT:-8000}"
 
