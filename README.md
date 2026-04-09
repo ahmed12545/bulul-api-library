@@ -322,11 +322,10 @@ to the cell.
 
 | Symptom | Cause | Fix |
 |---|---|---|
-| `No module named 'styletts2'` | `styletts2` pip package not installed in active env | Run `bash setup_kaggle.sh` or `pip install 'styletts2==0.1.6' einops_exts` |
+| `No module named 'styletts2'` | `styletts2` pip package not installed in active env (the yl4579 source tree in `models/StyleTTS2/` is a training layout — no `styletts2/` sub-package) | Run `bash setup_kaggle.sh` or `pip install 'styletts2==0.1.6' einops_exts` |
 | `No module named 'einops_exts'` | Missing dep for the yl4579 source tree | Same as above |
 | `mamba: error: unrecognized arguments: -n …` | Kaggle's `mamba` is a Python test-runner, not the conda extension | `tests/test.sh` now skips PATH-based `mamba`; uses `conda` or `micromamba` only |
 | `No working conda/micromamba env runner found` | Conda envs not set up in this session | Run `bash setup_kaggle.sh` first, or ensure Miniconda is at `~/miniconda3` |
-| `No module named 'styletts2'` with `models/StyleTTS2` in `sys.path` | That tree is the yl4579 training layout (no `styletts2/` sub-package) | Install the pip package; setup now does this automatically |
 
 ---
 
