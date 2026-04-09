@@ -18,8 +18,11 @@ bash setup_kaggle.sh
 ```
 This will:
 - Install Miniconda if not already present
+- Accept Anaconda channel Terms of Service (required in non-interactive environments)
 - Create a `bulul` conda environment with Python 3.10
 - Install all Python dependencies from `requirements.txt`
+- Clone the StyleTTS2 source tree into `models/StyleTTS2/` (it has no `setup.py`, so it cannot be pip-installed)
+- Install StyleTTS2's runtime dependencies inside the conda env
 - Download the StyleTTS2 model weights into `models/styletts2/`
 
 ### Step 3 — Start the service
@@ -31,8 +34,37 @@ You will be prompted for:
 - **ngrok auth token** — get one at <https://dashboard.ngrok.com>
 
 The script will:
-1. Start the FastAPI server on port 8000
-2. Open an ngrok tunnel and print the public URL
+1. Activate the `bulul` conda env and set `PYTHONPATH` to include the cloned StyleTTS2 source
+2. Start the FastAPI server on port 8000
+3. Open an ngrok tunnel and print the public URL
+
+### Quick Kaggle cell (clone + setup + model download)
+
+Paste this into a Kaggle code cell to run the full setup end-to-end:
+
+```python
+import os, subprocess
+
+REPO_URL = "https://github.com/ahmed12545/bulul-api-library.git"
+REPO_DIR = "/kaggle/working/bulul-api-library"
+
+def run(cmd, check=True):
+    print(f"\n$ {cmd}")
+    subprocess.run(cmd, shell=True, text=True, check=check)
+
+# 1) Clone fresh (remove old copy if present)
+if os.path.exists(REPO_DIR):
+    run(f"rm -rf {REPO_DIR}")
+run(f"git clone {REPO_URL} {REPO_DIR}")
+
+# 2) Make scripts executable
+run(f"chmod +x {REPO_DIR}/setup_kaggle.sh {REPO_DIR}/download_models.sh {REPO_DIR}/host_service.sh")
+
+# 3) Run full setup (Miniconda + conda env + deps + model clone + checkpoint download)
+run(f"cd {REPO_DIR} && bash setup_kaggle.sh")
+
+print("\n✅ Setup complete — run 'bash host_service.sh' to start the API.")
+```
 
 ### Step 4 — Call the endpoint
 ```bash
@@ -119,11 +151,13 @@ bash tests/test_scripts.sh
 bulul-api-library/
 ├── app.py               # FastAPI service
 ├── setup_kaggle.sh      # Miniconda + env + deps + model setup
-├── download_models.sh   # StyleTTS2 model download (idempotent)
-├── host_service.sh      # Start API + ngrok tunnel
+├── download_models.sh   # StyleTTS2 source clone + checkpoint download (idempotent)
+├── host_service.sh      # Start API + ngrok tunnel (sets PYTHONPATH for StyleTTS2)
 ├── requirements.txt     # Python dependencies
 ├── .env.example         # Example environment variables
-├── models/styletts2/    # Downloaded model weights (gitignored)
+├── models/
+│   ├── StyleTTS2/       # Cloned StyleTTS2 source (added to PYTHONPATH at runtime)
+│   └── styletts2/       # Downloaded model weights (gitignored)
 ├── runtime/tmp/         # Temp audio files (auto-deleted, gitignored)
 └── tests/
     ├── test_app.py      # API route tests
