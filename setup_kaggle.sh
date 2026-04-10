@@ -116,14 +116,23 @@ fi
 ok "Conda env ready: $ENV_STYLETTS2"
 
 # ── 6. Install Python dependencies ────────────────────────────────────────────
-# Install in two stages to avoid pip resolver conflicts.
+# Install in stages to avoid pip resolver conflicts.
 #
 # Stage A: pip / setuptools / wheel bootstrap.
 # Stage B: PyTorch + torchaudio from the CUDA 12.1 wheel index.
 #   Must come first so the resolver sees the correct torch version before
 #   styletts2 is evaluated.
 #
-# Stage C: StyleTTS2 deps from requirements-styletts2.txt (styletts2, phonemizer, …).
+# Stage C: All StyleTTS2 runtime deps from requirements-styletts2.txt
+#   (phonemizer, librosa, soundfile, scipy, numpy, transformers,
+#    huggingface_hub>=0.20, munch, pyyaml, …).
+#   NOTE: styletts2 itself is intentionally NOT in requirements-styletts2.txt
+#   because it pins huggingface_hub==0.19.4 which conflicts with the >=0.20
+#   constraint required by the rest of the stack.
+#
+# Stage D: styletts2 itself, installed with --no-deps so its huggingface_hub
+#   pin is skipped. All of its actual runtime deps are already installed in
+#   Stage C, so this is safe.
 log "Step 5/6 Installing deps in '$ENV_STYLETTS2'…"
 REQS_STYLETTS2="$SCRIPT_DIR/requirements-styletts2.txt"
 [ -f "$REQS_STYLETTS2" ] || die "requirements-styletts2.txt not found at $REQS_STYLETTS2"
@@ -137,10 +146,15 @@ run_q "$CONDA_EXE" run -n "$ENV_STYLETTS2" pip install --quiet --no-cache-dir \
     --index-url https://download.pytorch.org/whl/cu121 || \
     die "torch/torchaudio install failed in '$ENV_STYLETTS2'"
 
-log_v "  Stage C: installing StyleTTS2 deps from requirements-styletts2.txt…"
+log_v "  Stage C: installing StyleTTS2 runtime deps from requirements-styletts2.txt…"
 run_q "$CONDA_EXE" run -n "$ENV_STYLETTS2" pip install --quiet --no-cache-dir \
     -r "$REQS_STYLETTS2" || \
     die "pip install (StyleTTS2 deps) failed in '$ENV_STYLETTS2'"
+
+log_v "  Stage D: installing styletts2 package (--no-deps to skip huggingface_hub pin)…"
+run_q "$CONDA_EXE" run -n "$ENV_STYLETTS2" pip install --quiet --no-cache-dir \
+    --no-deps "styletts2>=0.1,<2.0" || \
+    die "pip install styletts2 --no-deps failed in '$ENV_STYLETTS2'"
 
 # ── 6b. Register env as a Jupyter/Kaggle kernel (optional, non-fatal) ─────────
 run_q "$CONDA_EXE" run -n "$ENV_STYLETTS2" python -m ipykernel install \
