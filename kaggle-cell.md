@@ -114,7 +114,7 @@ with open(SYNTH_PY, "w") as fh:
         ckpt = "{REPO_DIR}/models/styletts2/epoch_2nd_00100.pth"
         cfg  = "{REPO_DIR}/models/styletts2/config.yml"
         out  = "{OUT_WAV}"
-        text = "{TEXT}"
+        text = {repr(TEXT)}
 
         device = "cuda" if torch.cuda.is_available() else "cpu"
         print(f"[smoke] Loading StyleTTS2 on {{device}}...", flush=True)
@@ -144,5 +144,5 @@ if not os.path.isfile(OUT_WAV):
     raise SystemExit(f"WAV not found at {OUT_WAV} — check STDERR above.")
 
 print(f"\n[2/2] ✅ Smoke test passed.  Output: {OUT_WAV}", flush=True)
-display(Audio(OUT_WAV, autoplay=True))
+display(Audio(OUT_WAV, autoplay=False))
 ```
