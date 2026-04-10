@@ -100,13 +100,21 @@ fi
 ok "Conda env ready: $ENV_XTTS2"
 
 # ── 5. Install Python dependencies ────────────────────────────────────────────
-# Install in two stages to avoid pip resolver conflicts:
-#   Stage A: PyTorch + torchaudio from the CUDA 12.1 wheel index (must come first
-#            so the resolver sees the correct torch version before TTS is evaluated).
-#   Stage B: Everything else from requirements.txt (TTS, transformers, etc.).
+# Install in two stages to avoid pip resolver conflicts.
+#
+# Stage A: PyTorch + torchaudio from the CUDA 12.1 wheel index.
+#   Must come first so the resolver sees the correct torch version before TTS
+#   is evaluated.  The CUDA index URL is not PyPI — torch cannot be installed
+#   from requirements-xtts2.txt directly.
+#
+# Stage B: XTTS2-only deps from requirements-xtts2.txt (TTS, transformers, …).
+#   numpy, scipy, librosa, soundfile are intentionally absent from that file.
+#   TTS==0.22.0 pulls in compatible versions automatically.  Pinning
+#   numpy==1.26.4 alongside TTS in a single pip pass caused a
+#   ResolutionImpossible conflict via TTS's transitive trainer dependency.
 log "Step 4/5 Installing deps in '$ENV_XTTS2'…"
-REQS="$SCRIPT_DIR/requirements.txt"
-[ -f "$REQS" ] || die "requirements.txt not found at $REQS"
+REQS_XTTS2="$SCRIPT_DIR/requirements-xtts2.txt"
+[ -f "$REQS_XTTS2" ] || die "requirements-xtts2.txt not found at $REQS_XTTS2"
 
 run_q conda run -n "$ENV_XTTS2" pip install --quiet --upgrade pip setuptools wheel
 # setuptools + wheel ensure compiled extensions (e.g. numba, tokenizers) can be built from source if no wheel is available.
@@ -117,9 +125,9 @@ run_q conda run -n "$ENV_XTTS2" pip install --quiet --no-cache-dir \
     --index-url https://download.pytorch.org/whl/cu121 || \
     die "torch/torchaudio install failed in '$ENV_XTTS2'"
 
-log_v "  Stage B: installing remaining deps from requirements.txt…"
-run_q conda run -n "$ENV_XTTS2" pip install --quiet --no-cache-dir -r "$REQS" || \
-    die "pip install failed in '$ENV_XTTS2'"
+log_v "  Stage B: installing XTTS2 deps from requirements-xtts2.txt…"
+run_q conda run -n "$ENV_XTTS2" pip install --quiet --no-cache-dir -r "$REQS_XTTS2" || \
+    die "pip install (XTTS2 deps) failed in '$ENV_XTTS2'"
 
 # ── 5b. Register env as a Jupyter/Kaggle kernel (optional, non-fatal) ─────────
 run_q conda run -n "$ENV_XTTS2" python -m ipykernel install \

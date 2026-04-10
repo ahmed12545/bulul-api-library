@@ -35,22 +35,31 @@ This will:
 - Accept Anaconda channel Terms of Service (required in non-interactive environments)
 - Create one conda environment: **`bulul-xtts2`** (Python 3.10)
 - Install PyTorch **2.1.2** + torchaudio **2.1.2** from the CUDA 12.1 wheel index (stage A)
-- Install all remaining XTTS2-stack dependencies from `requirements.txt` (stage B):
+- Install XTTS2-only dependencies from `requirements-xtts2.txt` (stage B):
   - `TTS==0.22.0`, `transformers==4.38.2`, `tokenizers==0.15.2`, `accelerate==0.27.2`
-  - `sentencepiece==0.1.99`, `numpy==1.26.4`, `scipy<1.13`, `pydantic==2.6.4`
+  - `sentencepiece==0.1.99`, `pydantic==2.6.4`, `ipykernel==6.29.3`
+  - numpy, scipy, librosa, soundfile are pulled in automatically by TTS (no explicit pin — see note below)
 - Pre-download the XTTS2 model weights (~2 GB) with `COQUI_TOS_AGREED=1`
 - Register the env as a Jupyter/Kaggle notebook kernel (`Python (bulul-xtts2)`)
 - Set up `HF_HOME`, `TRANSFORMERS_CACHE`, and `TORCH_HOME` cache directories under `/kaggle/working/.cache/`
 
 > **Note:** The script is idempotent — re-running it safely skips already-complete steps.
 
-#### Why two install stages?
+#### Why two install stages and a separate requirements-xtts2.txt?
 
 `torch` must be pulled from the PyTorch CUDA 12.1 wheel index
-(`https://download.pytorch.org/whl/cu121`), which is not PyPI.
-Installing it *before* `TTS==0.22.0` lets pip resolve the rest of the dependency
-graph against the correct torch version and avoids `numpy`/`scipy` version
-conflicts seen with a single-pass `pip install -r requirements.txt`.
+(`https://download.pytorch.org/whl/cu121`), which is not PyPI, so it must be
+installed in a dedicated first pass.
+
+`numpy`, `scipy`, `librosa`, `soundfile`, and `numba` are **intentionally absent**
+from `requirements-xtts2.txt`.  `TTS==0.22.0` declares compatible ranges for all of
+them as transitive dependencies and pip resolves the correct versions automatically.
+Pinning `numpy==1.26.4` explicitly in the same pip pass as `TTS==0.22.0` caused a
+`ResolutionImpossible` error because TTS's transitive `trainer` dependency no longer
+satisfies that exact pin on current PyPI metadata.
+
+`requirements.txt` now contains only the API / web-server layer packages
+(fastapi, uvicorn, groq, pyngrok, …) and is **not** used by `setup_kaggle.sh`.
 
 #### Output mode
 
