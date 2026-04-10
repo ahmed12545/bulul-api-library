@@ -183,10 +183,16 @@ export TORCH_HOME="${TORCH_HOME:-/kaggle/working/.cache/torch}"
 export PYTHONPATH="${REPO_ROOT}/models/StyleTTS2:${PYTHONPATH:-}"
 
 # ── Runtime compatibility defaults (Kaggle / headless) ───────────────────────
-# Use the non-interactive Agg matplotlib backend and relax torch weights_only
-# loading so synthesis works in display-less environments.
-# Both can be overridden by exporting the variable before calling this script.
-export MPLBACKEND="${MPLBACKEND:-Agg}"
+# MPLBACKEND: Kaggle/Jupyter notebooks export
+#   MPLBACKEND=module://matplotlib_inline.backend_inline which is invalid in
+#   the headless conda-run execution path.  Normalise to Agg whenever the
+#   current value is absent or is an inline (module://) backend token.
+#   A non-inline value explicitly set by the caller is preserved.
+case "${MPLBACKEND:-}" in
+    ""|module://*) export MPLBACKEND="Agg" ;;
+esac
+# TORCH_FORCE_NO_WEIGHTS_ONLY_LOAD: relax torch>=2.6 weights_only default for
+# trusted local checkpoints.  Caller can override by exporting before calling.
 export TORCH_FORCE_NO_WEIGHTS_ONLY_LOAD="${TORCH_FORCE_NO_WEIGHTS_ONLY_LOAD:-1}"
 log "Runtime: MPLBACKEND=$MPLBACKEND  TORCH_FORCE_NO_WEIGHTS_ONLY_LOAD=$TORCH_FORCE_NO_WEIGHTS_ONLY_LOAD"
 

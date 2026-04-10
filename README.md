@@ -320,22 +320,33 @@ to the cell.
 
 ### Headless / Kaggle compatibility defaults
 
-`tests/test.sh` and `scripts/synthesize.py` automatically set the following
-environment variables if they are **not already exported** in the caller's
-environment:
+`tests/test.sh` and `scripts/synthesize.py` automatically apply the following
+runtime compatibility settings so synthesis works reliably in Kaggle notebooks
+and other headless environments **without any manual `export` calls**.
 
-| Variable | Default | Purpose |
+| Variable | Default | Behaviour |
 |---|---|---|
-| `MPLBACKEND` | `Agg` | Non-interactive matplotlib backend — avoids `cannot connect to X server` errors in display-less environments |
-| `TORCH_FORCE_NO_WEIGHTS_ONLY_LOAD` | `1` | Relaxes PyTorch's `weights_only=True` default — fixes `UnpicklingError` / `FutureWarning` when loading older checkpoints |
+| `MPLBACKEND` | `Agg` | Forced to `Agg` when unset **or** when the value is an inline backend (`module://…`). A non-inline value you export explicitly (e.g. `TkAgg`) is preserved. |
+| `TORCH_FORCE_NO_WEIGHTS_ONLY_LOAD` | `1` | Set to `1` when unset. Restores legacy `torch.load()` behaviour for trusted local checkpoints. Caller can override to `0` to re-enable strict mode. |
 
 To **override** either default, export the variable before calling the script:
 
 ```bash
-export MPLBACKEND=TkAgg          # use a different backend
-export TORCH_FORCE_NO_WEIGHTS_ONLY_LOAD=0   # re-enable strict weights_only
+export MPLBACKEND=TkAgg                         # use a different non-inline backend
+export TORCH_FORCE_NO_WEIGHTS_ONLY_LOAD=0       # re-enable strict weights_only
 bash tests/test.sh --text "Hello." --no-rvc
 ```
+
+> **Root causes addressed:**
+> - Kaggle injects `MPLBACKEND=module://matplotlib_inline.backend_inline` into
+>   every shell session.  This value is valid inside the notebook kernel but
+>   causes `ValueError: … is not a valid value for backend` when matplotlib is
+>   imported in a `conda run` subprocess.  Both scripts now detect and override
+>   any `module://` backend before the first matplotlib import.
+> - PyTorch ≥2.6 changed `weights_only` default to `True`, causing
+>   `_pickle.UnpicklingError` for trusted checkpoints that include non-tensor
+>   objects.  `TORCH_FORCE_NO_WEIGHTS_ONLY_LOAD=1` restores the pre-2.6
+>   behaviour for all `torch.load()` calls in the process.
 
 ### Troubleshooting
 
@@ -346,8 +357,9 @@ bash tests/test.sh --text "Hello." --no-rvc
 | `mamba: error: unrecognized arguments: -n …` | Kaggle's `mamba` is a Python test-runner, not the conda extension | `tests/test.sh` now skips PATH-based `mamba`; uses `conda` or `micromamba` only |
 | `No working conda/micromamba env runner found` | Conda envs not set up in this session | Run `bash setup_kaggle.sh` first, or ensure Miniconda is at `~/miniconda3` |
 | `No module named 'styletts2'` with `models/StyleTTS2` in `sys.path` | That tree is the yl4579 training layout (no `styletts2/` sub-package) | Install the pip package; setup now does this automatically |
-| `cannot connect to X server` / matplotlib display errors | matplotlib tries to use a GUI backend in a headless environment | `MPLBACKEND=Agg` is now set by default; export a different value to override |
-| `UnpicklingError` / `weights_only` warning when loading checkpoint | PyTorch ≥2.0 changed the default to `weights_only=True`, which rejects older pickled checkpoints | `TORCH_FORCE_NO_WEIGHTS_ONLY_LOAD=1` is now set by default; export `0` to restore strict mode |
+| `cannot connect to X server` / matplotlib display errors | matplotlib tries to use a GUI backend in a headless environment | `MPLBACKEND=Agg` is forced automatically; export a different non-inline value to override |
+| `ValueError: … is not a valid value for backend` with `module://matplotlib_inline…` | Kaggle injects an inline backend that is invalid outside the notebook kernel | Both scripts now detect and override `module://` backends before the first matplotlib import |
+| `UnpicklingError` / `weights_only` warning when loading checkpoint | PyTorch ≥2.6 changed the default to `weights_only=True`, which rejects older pickled checkpoints | `TORCH_FORCE_NO_WEIGHTS_ONLY_LOAD=1` is set by default; export `0` to restore strict mode |
 
 ---
 

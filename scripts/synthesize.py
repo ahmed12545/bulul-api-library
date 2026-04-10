@@ -18,10 +18,23 @@ import time
 from pathlib import Path
 
 # ── Headless / Kaggle compatibility defaults ──────────────────────────────────
-# Set before importing matplotlib-dependent or torch-dependent modules so that
-# headless environments (Kaggle, CI) don't fail with a display-backend or
-# weights_only error.  Explicit exports in the caller always take precedence.
-os.environ.setdefault("MPLBACKEND", "Agg")
+# Applied BEFORE any matplotlib-dependent import so headless environments
+# (Kaggle, CI) don't crash on backend selection or torch checkpoint loading.
+#
+# MPLBACKEND: Kaggle/Jupyter notebooks export
+#   MPLBACKEND=module://matplotlib_inline.backend_inline, which is only valid
+#   inside the kernel's display loop and is rejected by matplotlib when it is
+#   imported in a subprocess / conda-run path.  Normalise it to "Agg" whenever
+#   the value is absent or starts with "module://" (inline backend token).
+#   A caller-supplied non-inline backend (e.g. "TkAgg") is left untouched.
+_mpl = os.environ.get("MPLBACKEND", "")
+if not _mpl or _mpl.startswith("module://"):
+    os.environ["MPLBACKEND"] = "Agg"
+
+# TORCH_FORCE_NO_WEIGHTS_ONLY_LOAD: PyTorch >=2.6 changed torch.load() to
+# weights_only=True by default, which rejects older pickled checkpoints used
+# by StyleTTS2 (ASR/PLBERT loaders).  Default to "1" (legacy behaviour) but
+# respect any explicit value the caller has already set.
 os.environ.setdefault("TORCH_FORCE_NO_WEIGHTS_ONLY_LOAD", "1")
 
 
