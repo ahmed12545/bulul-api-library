@@ -11,13 +11,14 @@
 #   5. conda run python -c "import nltk; nltk.download('punkt_tab', quiet=True)"
 #      (NLTK tokenizer data required by styletts2.tts at import time)
 #
-# All versions validated against Kaggle GPU T4/P100 (CUDA 12.1, Python 3.10).
-# Strict pins (marked !) are required for binary/API compatibility; do not relax.
+# Strategy: pin only top-level / API-sensitive deps; let pip resolve transitive
+# deps automatically. Avoid upper-bound pins on purely transitive packages unless
+# an actual runtime API break is known (avoid resolver conflicts on clean installs).
 
 # ── Core audio processing ──────────────────────────────────────────────────────
 phonemizer>=3.2,<4.0
 librosa>=0.10,<0.11
-soundfile>=0.12,<0.13
+soundfile>=0.12.1
 pydub>=0.25.1,<0.26.0          # ! styletts2 0.1.x audio I/O; 0.26+ has breaking changes
 
 # ── Scientific computing ───────────────────────────────────────────────────────
@@ -35,12 +36,12 @@ nltk>=3.8.1,<4.0               # word tokenizer; punkt_tab data bootstrapped in 
 gruut>=2.3.4,<3.0              # G2P backend used by styletts2.tts at import time
 gruut-ipa>=0.13.0,<0.14.0      # ! paired with gruut 2.3.x
 gruut-lang-en>=2.0.0,<3.0      # English phoneme data for gruut
-langchain>=0.1.0,<0.2.0        # ! text splitter used by styletts2.tts import chain (styletts2 pin)
+langchain>=0.2.0,<0.3.0        # text splitter compat via langchain.text_splitter (pydantic v2 compatible; 0.3+ removed the compat shim)
 
 # ── Neural-network / tensor utilities ─────────────────────────────────────────
 einops>=0.7.0,<0.8.0           # ! styletts2 uses einops.rearrange; 0.8+ has breaking API
 einops-exts>=0.0.4,<0.0.5      # ! paired with einops 0.7.x
-networkx>=2.8.8,<3.0           # ! gruut dependency; networkx 3.x API is incompatible
+networkx>=2.8.8
 
 # ── styletts2 transitive deps (all installed --no-deps; provided explicitly here) ──
 munch>=4.0.0,<5.0              # ! styletts2 0.1.x uses munch 4.x dict-access API
@@ -48,7 +49,7 @@ pyyaml>=6.0.1,<7.0             # ! styletts2 config loading uses yaml.safe_load
 matplotlib>=3.7.0,<4.0         # used in styletts2 internals (plotting/signal utils)
 tqdm>=4.66.1,<5.0
 typing-extensions>=4.9.0,<5.0
-filelock>=3.12.4,<3.13         # ! styletts2's own pin; keep in sync
+filelock>=3.12.4
 
 # ── Kaggle / notebook integration ─────────────────────────────────────────────
 pydantic>=2.6,<3.0
