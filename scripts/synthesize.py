@@ -189,6 +189,20 @@ def main() -> None:
         device = "cpu"
         log("Device   : cpu (no CUDA-capable GPU detected)")
 
+    # ── Pre-flight: pkg_resources must be available (part of setuptools) ─────────
+    # TTS==0.22.0 imports pkg_resources at load time.  An absent or broken
+    # setuptools package produces an opaque "No module named 'pkg_resources'"
+    # error.  Surface it here with the active interpreter path and a concrete fix.
+    try:
+        import pkg_resources  # noqa: F401
+    except ImportError:
+        log("ERROR: 'pkg_resources' is not importable — setuptools is missing from this env.")
+        log(f"  Python   : {sys.executable}")
+        log(f"  Env      : {_conda_env}")
+        log("  Fix: conda run -n bulul-xtts2 python -m pip install -U pip setuptools wheel")
+        log("  Or re-run setup: bash setup_kaggle.sh")
+        sys.exit(1)
+
     # ── Load XTTS2 model ──────────────────────────────────────────────────────
     log("Loading XTTS2 model (first run downloads ~2 GB from HuggingFace)…")
     t0 = time.time()

@@ -148,6 +148,22 @@ if ! "$CONDA_EXE" run -n "$ENV_XTTS2" python -c "import pkg_resources" >> "$SETU
         die "setuptools reinstall failed in '$ENV_XTTS2'"
 fi
 
+# ── 5d. Re-upgrade setuptools after TTS install ───────────────────────────────
+# TTS==0.22.0 dependency resolution can silently overwrite the setuptools version
+# pinned in stage A, removing pkg_resources from the env.  A second unconditional
+# upgrade after TTS is installed is the only reliable guard against this.
+log_v "  Re-upgrading setuptools after TTS install (belt-and-suspenders)…"
+run_q "$CONDA_EXE" run -n "$ENV_XTTS2" pip install --quiet --upgrade setuptools wheel || \
+    die "setuptools post-TTS re-upgrade failed in '$ENV_XTTS2'"
+
+# ── 5e. Hard fail-fast verification: pkg_resources + TTS must both be importable
+log_v "  Hard-verifying pkg_resources + TTS are importable in '$ENV_XTTS2'…"
+if ! "$CONDA_EXE" run -n "$ENV_XTTS2" \
+        python -c "import pkg_resources, TTS; print('ok')" >> "$SETUP_LOG" 2>&1; then
+    die "pkg_resources or TTS not importable in '$ENV_XTTS2' after install — check $SETUP_LOG"
+fi
+ok "pkg_resources + TTS verified in '$ENV_XTTS2'"
+
 # ── 6. Download XTTS2 model and create runtime directories ───────────────────
 log "Step 5/5 Preparing XTTS2 assets and runtime dirs…"
 run_q "$CONDA_EXE" run -n "$ENV_XTTS2" \
