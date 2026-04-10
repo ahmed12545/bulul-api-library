@@ -1,3 +1,11 @@
+# API / service layer — web server, auth, and integration packages.
+#
+# XTTS2 model dependencies (TTS, torch, transformers, numpy, etc.) live in
+# requirements-xtts2.txt to avoid ResolutionImpossible conflicts caused by
+# pinning numpy alongside TTS's transitive trainer dependency in one pip pass.
+#
+# For Kaggle / headless deployment use setup_kaggle.sh, which installs
+# requirements-xtts2.txt (not this file) inside the bulul-xtts2 conda env.
 fastapi==0.111.0
 uvicorn[standard]==0.29.0
 python-multipart==0.0.22
@@ -7,21 +15,3 @@ pydantic==2.6.4
 python-dotenv==1.0.1
 pyngrok==7.2.0
 requests==2.31.0
-# numpy: 1.26.x is the last 1.x release; TTS 0.22.0 requires <2.0
-numpy==1.26.4
-# scipy: 1.13.0 introduced a numpy ABI break that conflicts with TTS 0.22.0; stay on <1.13
-scipy>=1.10,<1.13
-soundfile==0.12.1
-# numba: XTTS2 transitive dep via librosa; 0.60 is the last version compatible with numpy 1.x
-numba<0.61
-librosa>=0.10,<0.11
-# XTTS2 — Coqui TTS package providing the XTTS v2 model for zero-shot voice cloning.
-# Pinned to 0.22.0 for a stable, tested dependency set.
-TTS==0.22.0
-# Transformer stack — pinned to the set tested with TTS 0.22.0 / XTTS v2.
-transformers==4.38.2
-tokenizers==0.15.2
-accelerate==0.27.2
-sentencepiece==0.1.99
-# ipykernel — allows registering the conda env as a Jupyter/Kaggle notebook kernel.
-ipykernel==6.29.3
