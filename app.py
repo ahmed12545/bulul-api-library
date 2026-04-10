@@ -79,7 +79,7 @@ def _load_tts_model():
         from styletts2 import tts as styletts2_tts  # type: ignore[import]
 
         # USE_CPU_INFERENCE=1 forces CPU even when a GPU is available.
-        _use_cpu = os.getenv("USE_CPU_INFERENCE", "0").strip() in ("1", "true", "True", "yes")
+        _use_cpu = os.getenv("USE_CPU_INFERENCE", "0").strip().lower() in ("1", "true", "yes")
         device = "cpu" if _use_cpu else ("cuda" if torch.cuda.is_available() else "cpu")
         print(f"[app] Loading StyleTTS2 ({ckpt_name}) on {device}…")
         _tts_model = styletts2_tts.StyleTTS2(

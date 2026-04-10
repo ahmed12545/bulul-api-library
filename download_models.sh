@@ -96,6 +96,10 @@ log_v "  styletts2 pip package installed"
 #
 # Format: "LABEL|CKPT_URL|CONFIG_URL|CKPT_FILENAME|CONFIG_FILENAME"
 #
+# Note: local CKPT_FILENAME intentionally uses singular 'epoch_' regardless of
+# the upstream HuggingFace filename (which may use plural 'epochs_').  This
+# keeps a consistent local naming convention across all catalog entries.
+#
 # To add more checkpoints (up to the 5-slot cap) append a new row below.
 CKPT_CATALOG=(
     "ljspeech|https://huggingface.co/yl4579/StyleTTS2-LJSpeech/resolve/main/Models/LJSpeech/epoch_2nd_00100.pth|https://huggingface.co/yl4579/StyleTTS2-LJSpeech/resolve/main/Models/LJSpeech/config.yml|epoch_2nd_00100.pth|config.yml"
