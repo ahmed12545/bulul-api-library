@@ -407,36 +407,39 @@ exit immediately with a clear migration message:
 
 ## Troubleshooting
 
-### Conda path mismatch (`No module named 'pkg_resources'` or wrong env)
+### `No module named 'pkg_resources'` — synthesis fails despite correct env
 
 **Symptom:** `tests/test.sh` or `scripts/synthesize.py` fails with
-`No module named 'pkg_resources'` even though you verified the install in a
-separate cell.
+`No module named 'pkg_resources'` even though the log shows the correct Python
+interpreter (`/root/miniconda3/envs/bulul-xtts2/bin/python`).
 
-**Root cause:** Different `conda` executables are being used across contexts.
-Kaggle notebooks may have a system-level `conda` earlier on `PATH` that resolves
-to a different installation than `/root/miniconda3/bin/conda`.  A repair run in
-one cell that calls `/root/miniconda3/bin/conda run -n bulul-xtts2 pip install …`
-installs into one env location, while `test.sh` invokes a different `conda` that
-points at an empty or base env — so the packages are never seen.
+**Root cause:** `pkg_resources` is provided by `setuptools`.  When pip installs
+`TTS==0.22.0` it can silently downgrade or remove `setuptools` to satisfy a
+transitive dependency constraint, leaving the env without `pkg_resources` even
+though every other package was installed successfully.
 
-**How these scripts resolve conda:**
+**How the scripts protect against this:**
 
-Both `setup_kaggle.sh` and `tests/test.sh` now use an explicit Miniconda binary
-path (`$MINICONDA_DIR/bin/conda`, where `MINICONDA_DIR` defaults to `$HOME/miniconda3`):
-```bash
-CONDA_EXE="$MINICONDA_DIR/bin/conda"   # e.g. /root/miniconda3/bin/conda on Kaggle
-```
-All `conda run` calls go through `$CONDA_EXE` (never the bare `conda` command).
-`tests/test.sh` prints the resolved path at runtime:
-```
-[test] Conda exe  : /root/miniconda3/bin/conda
-[test] Python exe : /root/miniconda3/envs/bulul-xtts2/bin/python
-```
-`scripts/synthesize.py` also prints `sys.executable` and the active conda env
-so any remaining mismatch is immediately visible in the log.
+- `setup_kaggle.sh` installs `pip`, `setuptools`, and `wheel` *before* TTS
+  (stage A), and again *after* TTS (stage D) to undo any downgrade.  Setup
+  then runs a **hard fail-fast check** — if either `pkg_resources` or `TTS`
+  cannot be imported the script aborts with a clear message rather than letting
+  the problem surface silently at runtime:
+  ```
+  [setup] ✅ pkg_resources + TTS verified in 'bulul-xtts2'
+  ```
+- `tests/test.sh` runs a **preflight** step in the same conda runner before
+  starting the 600-second synthesis call:
+  ```
+  [test] Preflight: checking pkg_resources + TTS importable in 'bulul-xtts2'…
+  [test] ✅ Preflight passed: pkg_resources + TTS importable in 'bulul-xtts2'
+  ```
+  If the preflight fails it prints an actionable fix and exits immediately
+  instead of waiting for the synthesis timeout.
+- `scripts/synthesize.py` checks for `pkg_resources` *before* importing TTS
+  and prints the active interpreter path plus the exact repair command.
 
-**Quick repair** (if `pkg_resources` is missing in the live env):
+**Quick repair** (if `pkg_resources` is missing in a live env):
 ```python
 import subprocess
 # Adjust CONDA_PATH to match your $MINICONDA_DIR/bin/conda value.
@@ -448,6 +451,29 @@ subprocess.run([
     f'&& "{CONDA_PATH}" run -n bulul-xtts2 pip install --no-cache-dir TTS==0.22.0',
 ], check=True)
 ```
+
+### Conda path mismatch (wrong env picked up)
+
+**Symptom:** The log shows `Conda exe : /root/miniconda3/bin/conda` and
+`Python exe : /root/miniconda3/envs/bulul-xtts2/bin/python`, but a repair run
+in a separate cell used a different `conda` binary.
+
+**How these scripts resolve conda:**
+
+Both `setup_kaggle.sh` and `tests/test.sh` use an explicit Miniconda binary
+path (`$MINICONDA_DIR/bin/conda`, where `MINICONDA_DIR` defaults to
+`$HOME/miniconda3`):
+```bash
+CONDA_EXE="$MINICONDA_DIR/bin/conda"   # e.g. /root/miniconda3/bin/conda on Kaggle
+```
+All `conda run` calls go through `$CONDA_EXE` (never the bare `conda` command).
+`tests/test.sh` prints the resolved path at runtime:
+```
+[test] Conda exe  : /root/miniconda3/bin/conda
+[test] Python exe : /root/miniconda3/envs/bulul-xtts2/bin/python
+```
+`scripts/synthesize.py` also prints `sys.executable` and the active conda env
+so any remaining mismatch is immediately visible in the log.
 
 ### Smoke test command reference
 

@@ -200,6 +200,29 @@ else
     warn "  To set up the XTTS2 environment, run: bash setup_kaggle.sh"
 fi
 
+# ── Preflight: verify pkg_resources + TTS are importable in the runner env ────
+# This surfaces missing-setuptools failures before the 600-second synthesis
+# timeout, with a clear fix message instead of a buried log entry.
+if [ -n "$_ENV_RUNNER" ]; then
+    log "Preflight: checking pkg_resources + TTS importable in '$ENV_XTTS2'…"
+    PREFLIGHT_EXIT=0
+    $XTTS2_PYTHON_CMD -c \
+        "import pkg_resources, TTS; print('[preflight] pkg_resources + TTS OK')" \
+        >> "$TEST_LOG" 2>&1 || PREFLIGHT_EXIT=$?
+    if [ "$PREFLIGHT_EXIT" -ne 0 ]; then
+        fail "Preflight FAILED — pkg_resources or TTS not importable in '$ENV_XTTS2'"
+        fail "  Python interpreter: ${_SYNTH_PYTHON:-unknown}"
+        fail "  Fix by running in your Kaggle notebook:"
+        fail "    ${_CONDA_EXE:-conda} run -n $ENV_XTTS2 python -m pip install -U pip setuptools wheel"
+        fail "    ${_CONDA_EXE:-conda} run -n $ENV_XTTS2 pip install --no-cache-dir TTS==0.22.0"
+        fail "  Or re-run: bash setup_kaggle.sh"
+        fail "  Log: $TEST_LOG"
+        tail -n 20 "$TEST_LOG" >&2 || true
+        exit 1
+    fi
+    ok "Preflight passed: pkg_resources + TTS importable in '$ENV_XTTS2'"
+fi
+
 # ── Environment variables ─────────────────────────────────────────────────────
 export HF_HOME="${HF_HOME:-/kaggle/working/.cache/huggingface}"
 export TRANSFORMERS_CACHE="${TRANSFORMERS_CACHE:-/kaggle/working/.cache/huggingface}"
