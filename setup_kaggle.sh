@@ -173,7 +173,12 @@ log_v "  Python dependencies installed in '$ENV_STYLETTS2'"
 log_v "  Hard-verifying styletts2 is importable in '$ENV_STYLETTS2'…"
 if ! "$CONDA_EXE" run -n "$ENV_STYLETTS2" \
         python -c "from styletts2 import tts; print('ok')" >> "$SETUP_LOG" 2>&1; then
-    die "styletts2 not importable in '$ENV_STYLETTS2' after install — check $SETUP_LOG"
+    MISSING_MOD=$(grep -oP "No module named '\K[^']+" "$SETUP_LOG" | tail -1 || true)
+    if [ -n "$MISSING_MOD" ]; then
+        die "styletts2 not importable: missing module '$MISSING_MOD'. Fix: $CONDA_EXE run -n $ENV_STYLETTS2 pip install $MISSING_MOD"
+    else
+        die "styletts2 not importable in '$ENV_STYLETTS2' after install — check $SETUP_LOG"
+    fi
 fi
 ok "styletts2 verified in '$ENV_STYLETTS2'"
 

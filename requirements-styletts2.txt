@@ -35,6 +35,7 @@ nltk>=3.8.1,<4.0               # word tokenizer; punkt_tab data bootstrapped in 
 gruut>=2.3.4,<3.0              # G2P backend used by styletts2.tts at import time
 gruut-ipa>=0.13.0,<0.14.0      # ! paired with gruut 2.3.x
 gruut-lang-en>=2.0.0,<3.0      # English phoneme data for gruut
+langchain>=0.1.0,<0.2.0        # ! text splitter used by styletts2.tts import chain (styletts2 pin)
 
 # ── Neural-network / tensor utilities ─────────────────────────────────────────
 einops>=0.7.0,<0.8.0           # ! styletts2 uses einops.rearrange; 0.8+ has breaking API
