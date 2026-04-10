@@ -100,12 +100,30 @@ fi
 ok "Conda env ready: $ENV_XTTS2"
 
 # ── 5. Install Python dependencies ────────────────────────────────────────────
+# Install in two stages to avoid pip resolver conflicts:
+#   Stage A: PyTorch + torchaudio from the CUDA 12.1 wheel index (must come first
+#            so the resolver sees the correct torch version before TTS is evaluated).
+#   Stage B: Everything else from requirements.txt (TTS, transformers, etc.).
 log "Step 4/5 Installing deps in '$ENV_XTTS2'…"
 REQS="$SCRIPT_DIR/requirements.txt"
 [ -f "$REQS" ] || die "requirements.txt not found at $REQS"
-run_q conda run -n "$ENV_XTTS2" pip install --quiet --upgrade pip
-run_q conda run -n "$ENV_XTTS2" pip install --quiet -r "$REQS" || \
+
+run_q conda run -n "$ENV_XTTS2" pip install --quiet --upgrade pip setuptools wheel
+# setuptools + wheel ensure compiled extensions (e.g. numba, tokenizers) can be built from source if no wheel is available.
+
+log_v "  Stage A: installing torch==2.1.2 + torchaudio==2.1.2 (CUDA 12.1)…"
+run_q conda run -n "$ENV_XTTS2" pip install --quiet --no-cache-dir \
+    "torch==2.1.2" "torchaudio==2.1.2" \
+    --index-url https://download.pytorch.org/whl/cu121 || \
+    die "torch/torchaudio install failed in '$ENV_XTTS2'"
+
+log_v "  Stage B: installing remaining deps from requirements.txt…"
+run_q conda run -n "$ENV_XTTS2" pip install --quiet --no-cache-dir -r "$REQS" || \
     die "pip install failed in '$ENV_XTTS2'"
+
+# ── 5b. Register env as a Jupyter/Kaggle kernel (optional, non-fatal) ─────────
+run_q conda run -n "$ENV_XTTS2" python -m ipykernel install \
+    --user --name "$ENV_XTTS2" --display-name "Python ($ENV_XTTS2)" || true
 log_v "  Python dependencies installed in '$ENV_XTTS2'"
 
 # ── 6. Download XTTS2 model and create runtime directories ───────────────────
@@ -115,6 +133,7 @@ run_q conda run -n "$ENV_XTTS2" \
         TRANSFORMERS_CACHE="$TRANSFORMERS_CACHE" \
         TORCH_HOME="$TORCH_HOME" \
         BULUL_VERBOSE="$VERBOSE" \
+        COQUI_TOS_AGREED=1 \
     bash "$SCRIPT_DIR/download_models.sh" || \
     die "Asset preparation failed"
 
