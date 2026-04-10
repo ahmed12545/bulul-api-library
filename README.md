@@ -12,9 +12,10 @@ git clone https://github.com/ahmed12545/bulul-api-library.git
 cd bulul-api-library
 ```
 
-### Step 2 — Add your voice reference files
-Place one or more `.wav` files in the `voice refs/` folder.
-These are short audio samples (6–30 s of clear speech) that XTTS2 uses to clone a voice.
+### Step 2 — Add your voice reference files (optional)
+You can either:
+- **Use a built-in base speaker** (no files needed) — see [speaker-ID mode](#xtts2-base-speaker-id-mode) below.
+- **Clone a voice** — place one or more `.wav` files (6–30 s of clear speech) in the `voice refs/` folder.
 
 ```
 voice refs/
@@ -97,7 +98,7 @@ run_streaming(f"git clone {REPO_URL} {REPO_DIR}")
 run_streaming(f"chmod +x {REPO_DIR}/setup_kaggle.sh {REPO_DIR}/download_models.sh "
               f"{REPO_DIR}/host_service.sh {REPO_DIR}/tests/test.sh")
 
-# 3) Add your reference WAV (replace with your actual file path)
+# 3) (Optional) Add a reference WAV for voice cloning — or use --voice-id below instead
 # run_streaming(f"cp /path/to/my_voice.wav '{REPO_DIR}/voice refs/my_voice.wav'")
 
 # 4) Run full setup (Miniconda + conda env + XTTS2 deps + model download)
@@ -105,9 +106,13 @@ run_streaming(f"cd {REPO_DIR} && bash setup_kaggle.sh")
 
 print("\n✅ Setup complete.")
 print("  • Env: bulul-xtts2 (XTTS2 synthesis + API)")
-print("  • Place reference WAVs in 'voice refs/' for voice cloning.")
+print("  • Quick test with built-in speaker:")
+print(f"      bash {REPO_DIR}/tests/test.sh --voice-id puck --text 'Hello from Puck.'")
+print("  • List all built-in speaker IDs:")
+print(f"      bash {REPO_DIR}/tests/test.sh --list-speakers")
+print("  • Or place reference WAVs in 'voice refs/' for voice cloning.")
 print("  • Run 'bash host_service.sh' to start the API.")
-print("  • Run 'bash tests/test.sh --help' for synthesis options.")
+print("  • Run 'bash tests/test.sh --help' for all synthesis options.")
 ```
 
 ### Step 5 — Call the endpoint
@@ -196,14 +201,54 @@ bash tests/test_scripts.sh
 
 ### Overview
 
-XTTS2 (Coqui TTS v2) synthesises speech directly in a target voice using a short reference WAV,
-eliminating the need for a separate voice-conversion step.
+XTTS2 (Coqui TTS v2) synthesises speech directly in a target voice.  Two modes
+are available:
 
 ```
+# Mode 1 — built-in base speaker (no reference WAV required):
+text + speaker-id  →  XTTS2  →  speech audio
+
+# Mode 2 — voice cloning from a reference WAV:
 text + reference WAV  →  XTTS2  →  cloned speech audio
 ```
 
-### `voice refs/` folder
+### XTTS2 base speaker-ID mode
+
+XTTS2 ships with a set of built-in voices you can use out of the box — no
+reference WAV required.  Pass `--voice-id` to select one.
+
+```bash
+# Built-in speaker by ID
+conda run -n bulul-xtts2 python -u scripts/synthesize.py \
+    --text "Hello from Puck." \
+    --output /tmp/puck.wav \
+    --voice-id puck
+
+conda run -n bulul-xtts2 python -u scripts/synthesize.py \
+    --text "Hello from Fenrir." \
+    --output /tmp/fenrir.wav \
+    --voice-id fenrir
+
+# List all available built-in speaker IDs
+conda run -n bulul-xtts2 python -u scripts/synthesize.py --list-speakers
+```
+
+Speaker IDs are matched **case-insensitively** (`puck` → `Puck`).
+
+Some common built-in speakers:
+
+| ID (case-insensitive) | Style |
+|---|---|
+| `Puck` | Expressive male |
+| `Fenrir` | Deep male |
+| `Ana Florence` | Warm female |
+| `Andrew Chipper` | Upbeat male |
+| `Claribel Dervla` | Calm female |
+| `Daisy Studious` | Clear female |
+
+Run `--list-speakers` for the complete list from the loaded model.
+
+### `voice refs/` folder (cloning mode)
 
 | What to put there | Notes |
 |---|---|
@@ -218,7 +263,16 @@ See [`voice refs/README.md`](voice%20refs/README.md) for recording tips and form
 ### Running synthesis manually
 
 ```bash
-# Synthesise with a specific reference WAV
+# Built-in speaker by ID (no reference WAV needed)
+conda run -n bulul-xtts2 python -u scripts/synthesize.py \
+    --text "Welcome to the podcast." \
+    --output /tmp/output.wav \
+    --voice-id puck
+
+# List all built-in speaker IDs
+conda run -n bulul-xtts2 python -u scripts/synthesize.py --list-speakers
+
+# Voice cloning from a specific reference WAV
 conda run -n bulul-xtts2 python -u scripts/synthesize.py \
     --text "Welcome to the podcast." \
     --output /tmp/output.wav \
@@ -246,14 +300,21 @@ conda run -n bulul-xtts2 python -u scripts/synthesize.py \
 ### End-to-end test script (`tests/test.sh`)
 
 ```bash
-# Default test (auto-detects first WAV in 'voice refs/')
-bash tests/test.sh --text "Hello, this is a test."
+# Speaker-ID mode (no reference WAV needed)
+bash tests/test.sh --voice-id puck --text "Hello from Puck."
+bash tests/test.sh --voice-id fenrir --text "Hello from Fenrir."
 
-# Explicit reference WAV
+# List all available built-in speaker IDs
+bash tests/test.sh --list-speakers
+
+# Voice-cloning mode (provide a reference WAV)
 bash tests/test.sh \
     --text "Hello, this is a test." \
     --ref-wav "voice refs/my_voice.wav" \
     --output-dir /kaggle/working/voice_tests
+
+# Default test (auto-detects first WAV in 'voice refs/' or uses built-in fallback)
+bash tests/test.sh --text "Hello, this is a test."
 
 # Force CPU inference
 bash tests/test.sh --text "Hello." --cpu

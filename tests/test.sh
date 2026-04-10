@@ -9,11 +9,24 @@
 #   --output-dir DIR      Output directory   (default: /kaggle/working/voice_tests
 #                                             or ./output/voice_tests if not on Kaggle)
 #   --ref-wav PATH        Reference WAV for voice cloning (default: first .wav in 'voice refs/')
+#                         Cannot be combined with --voice-id.
+#   --voice-id SPEAKER    Use a built-in XTTS2 base speaker instead of a reference WAV.
+#                         Examples: puck  fenrir  "Ana Florence"  "Andrew Chipper"
+#                         Cannot be combined with --ref-wav.
+#   --list-speakers       Print all available built-in XTTS2 speaker IDs and exit.
 #   --language LANG       Language code (default: en)
 #   --cpu                 Force CPU inference (default: auto-select GPU if available)
 #   --timeout N           Max seconds for synthesis step (default: 600)
 #   --verbose             Show full subprocess output (default: quiet/summary mode)
 #   --help                Show this help and exit
+#
+# Speaker-ID mode (no reference WAV needed):
+#   bash tests/test.sh --voice-id puck --text "Hello world."
+#   bash tests/test.sh --voice-id fenrir --text "Hello world."
+#   bash tests/test.sh --list-speakers           # show all available IDs
+#
+# Voice-cloning mode (provide a reference WAV):
+#   bash tests/test.sh --ref-wav "voice refs/my_voice.wav" --text "Hello."
 #
 # Legacy flags that are no longer accepted (will fail fast with a clear message):
 #   --ckpt, --ckpt-name, --voice-model, --voice-index, --no-rvc,
@@ -29,9 +42,6 @@
 #   A heartbeat line is printed every 30 s while long steps are running, so
 #   the notebook cell never appears silent.  Python is run with -u
 #   (unbuffered) so output streams to the cell in real time.
-#
-# Required assets (before running):
-#   voice refs/<name>.wav   — reference WAV for voice cloning (3–30 s of clear speech)
 #
 # Run 'bash setup_kaggle.sh' to install all XTTS2 dependencies.
 
@@ -50,6 +60,8 @@ DEFAULT_OUTPUT_DIR="/kaggle/working/voice_tests"
 TEXT="Welcome to the Bulul podcast. Today we explore the intersection of technology and everyday life, with clear insights and practical takeaways for every listener."
 OUTPUT_DIR="$DEFAULT_OUTPUT_DIR"
 REF_WAV=""
+VOICE_ID=""
+LIST_SPEAKERS=0
 LANGUAGE="en"
 USE_CPU=0
 TIMEOUT=600
@@ -87,6 +99,8 @@ while [[ $# -gt 0 ]]; do
         --text)         TEXT="$2";         shift 2 ;;
         --output-dir)   OUTPUT_DIR="$2";   shift 2 ;;
         --ref-wav)      REF_WAV="$2";      shift 2 ;;
+        --voice-id)     VOICE_ID="$2";     shift 2 ;;
+        --list-speakers) LIST_SPEAKERS=1;  shift   ;;
         --language)     LANGUAGE="$2";     shift 2 ;;
         --cpu)          USE_CPU=1;         shift   ;;
         --timeout)      TIMEOUT="$2";      shift 2 ;;
@@ -97,17 +111,21 @@ while [[ $# -gt 0 ]]; do
             ;;
         --ckpt|--ckpt-name|--voice-model|--voice-index|--no-rvc|--pitch|--method|--timeout-tts|--timeout-rvc)
             die "Legacy flag '$1' is not supported. This project is XTTS2-only." \
-                "Use --ref-wav 'voice refs/my_voice.wav' for voice cloning." \
+                "Use --voice-id puck (built-in speaker) or --ref-wav 'voice refs/my_voice.wav' for cloning." \
                 "Run 'bash tests/test.sh --help' for current options."
             ;;
         --config)
             die "The --config (RVC YAML) flag is not supported. This project is XTTS2-only." \
-                "Use --ref-wav 'voice refs/my_voice.wav' for voice cloning." \
+                "Use --voice-id puck (built-in speaker) or --ref-wav 'voice refs/my_voice.wav' for cloning." \
                 "Run 'bash tests/test.sh --help' for current options."
             ;;
         *) die "Unknown argument: $1" ;;
     esac
 done
+
+if [ -n "$REF_WAV" ] && [ -n "$VOICE_ID" ]; then
+    die "--ref-wav and --voice-id are mutually exclusive. Use one or the other."
+fi
 
 # ── Set up log file ───────────────────────────────────────────────────────────
 mkdir -p "$LOG_DIR" "$OUTPUT_DIR"
@@ -175,10 +193,10 @@ case "${MPLBACKEND:-}" in
 esac
 log "Runtime: MPLBACKEND=$MPLBACKEND"
 
-# ── Resolve reference WAV ─────────────────────────────────────────────────────
+# ── Resolve reference WAV (only when not using voice-id) ─────────────────────
 VOICE_REFS_DIR="$REPO_ROOT/voice refs"
-if [ -z "$REF_WAV" ]; then
-    # Auto-detect first WAV in 'voice refs/'
+if [ -z "$REF_WAV" ] && [ -z "$VOICE_ID" ]; then
+    # Auto-detect first WAV in 'voice refs/' (only when no voice-id given)
     FOUND_WAV=$(find "$VOICE_REFS_DIR" -maxdepth 1 -name "*.wav" | sort | head -1 2>/dev/null || true)
     if [ -n "$FOUND_WAV" ]; then
         REF_WAV="$FOUND_WAV"
@@ -187,6 +205,7 @@ if [ -z "$REF_WAV" ]; then
         warn "No reference WAV provided and none found in 'voice refs/'."
         warn "  XTTS2 will use a built-in default speaker."
         warn "  For voice cloning: place a .wav file in 'voice refs/' or use --ref-wav."
+        warn "  For a base speaker: use --voice-id puck  (or --voice-id fenrir, etc.)"
     fi
 fi
 
@@ -200,23 +219,48 @@ if [ "${#TEXT}" -gt 60 ]; then
 else
     log "Text        : $TEXT"
 fi
-if [ -n "$REF_WAV" ]; then
+if [ -n "$VOICE_ID" ]; then
+    log "Voice ID    : $VOICE_ID (built-in speaker)"
+elif [ -n "$REF_WAV" ]; then
     log "Ref WAV     : $REF_WAV"
 else
-    log "Ref WAV     : (none — built-in speaker)"
+    log "Ref WAV     : (none — auto-detect or built-in fallback)"
 fi
 log "=================================="
 
-# ── Step 1: Validate reference WAV (if provided) ──────────────────────────────
-log "1/2 Checking reference WAV…"
+# ── Step 1: Handle --list-speakers early ─────────────────────────────────────
+if [ "$LIST_SPEAKERS" -eq 1 ]; then
+    log "1/1 Listing built-in XTTS2 speakers…"
+    heartbeat_start
+    LS_EXIT=0
+    timeout "$TIMEOUT" \
+        $XTTS2_PYTHON_CMD -u "$REPO_ROOT/scripts/synthesize.py" \
+            --list-speakers \
+        >> "$TEST_LOG" 2>&1 || LS_EXIT=$?
+    heartbeat_stop
+    if [ "$LS_EXIT" -eq 124 ]; then
+        die "Timed out listing speakers after ${TIMEOUT}s"
+    elif [ "$LS_EXIT" -ne 0 ]; then
+        die "Failed to list speakers (exit code $LS_EXIT)"
+    fi
+    # Print the speaker list from the log to stdout
+    grep '^\[synthesize\]' "$TEST_LOG" | sed 's/^\[synthesize\] //'
+    ok "Speaker list complete."
+    exit 0
+fi
+
+# ── Step 2: Validate reference WAV (if provided) ──────────────────────────────
+log "1/2 Checking voice source…"
 if [ -n "$REF_WAV" ]; then
     [ -f "$REF_WAV" ] || die "Reference WAV not found: $REF_WAV  (place .wav files in 'voice refs/')"
     ok "1/2 Reference WAV found: $REF_WAV"
+elif [ -n "$VOICE_ID" ]; then
+    ok "1/2 Using built-in speaker ID: $VOICE_ID"
 else
-    ok "1/2 No reference WAV — will use built-in speaker"
+    ok "1/2 No voice source specified — will auto-detect or use built-in fallback"
 fi
 
-# ── Step 2: XTTS2 synthesis ───────────────────────────────────────────────────
+# ── Step 2 (continued): XTTS2 synthesis ──────────────────────────────────────
 SYNTH_OUTPUT="$OUTPUT_DIR/xtts2_output.wav"
 
 SYNTH_ARGS=(
@@ -224,12 +268,17 @@ SYNTH_ARGS=(
     --output  "$SYNTH_OUTPUT"
     --language "$LANGUAGE"
 )
-[ "$USE_CPU" -eq 1 ]  && SYNTH_ARGS+=(--cpu)
-[ -n "$REF_WAV" ]     && SYNTH_ARGS+=(--ref-wav "$REF_WAV")
+[ "$USE_CPU" -eq 1 ]   && SYNTH_ARGS+=(--cpu)
+[ -n "$REF_WAV" ]      && SYNTH_ARGS+=(--ref-wav "$REF_WAV")
+[ -n "$VOICE_ID" ]     && SYNTH_ARGS+=(--voice-id "$VOICE_ID")
 
 _device_note=""
 [ "$USE_CPU" -eq 1 ] && _device_note=", CPU mode"
-log "2/2 Synthesising with XTTS2 (max ${TIMEOUT}s${_device_note})…"
+if [ -n "$VOICE_ID" ]; then
+    log "2/2 Synthesising with XTTS2 speaker '$VOICE_ID' (max ${TIMEOUT}s${_device_note})…"
+else
+    log "2/2 Synthesising with XTTS2 (max ${TIMEOUT}s${_device_note})…"
+fi
 
 heartbeat_start
 

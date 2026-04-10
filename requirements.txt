@@ -6,9 +6,14 @@ pydantic==2.7.1
 python-dotenv==1.0.1
 pyngrok==7.2.0
 requests==2.31.0
+# numpy: 1.26.x is the last 1.x release; TTS 0.22.0 requires <2.0
 numpy==1.26.4
-scipy==1.13.0
+# scipy: 1.13.0 introduced a numpy ABI break that conflicts with TTS 0.22.0; stay on <1.13
+scipy>=1.10,<1.13
 soundfile==0.12.1
+# numba: XTTS2 transitive dep via librosa; 0.60 is the last version compatible with numpy 1.x
+numba<0.61
+librosa>=0.10,<0.11
 # XTTS2 — Coqui TTS package providing the XTTS v2 model for zero-shot voice cloning.
-# Includes torch, torchaudio, and all required inference dependencies.
-TTS>=0.22.0
+# Pinned to 0.22.0 for a stable, tested dependency set.
+TTS==0.22.0
