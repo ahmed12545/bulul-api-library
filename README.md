@@ -34,11 +34,23 @@ This will:
 - Install Miniconda if not already present
 - Accept Anaconda channel Terms of Service (required in non-interactive environments)
 - Create one conda environment: **`bulul-xtts2`** (Python 3.10)
-- Install all Python dependencies from `requirements.txt` (including the `TTS` package for XTTS2)
-- Pre-download the XTTS2 model weights (~2 GB) into the HuggingFace cache
+- Install PyTorch **2.1.2** + torchaudio **2.1.2** from the CUDA 12.1 wheel index (stage A)
+- Install all remaining XTTS2-stack dependencies from `requirements.txt` (stage B):
+  - `TTS==0.22.0`, `transformers==4.38.2`, `tokenizers==0.15.2`, `accelerate==0.27.2`
+  - `sentencepiece==0.1.99`, `numpy==1.26.4`, `scipy<1.13`, `pydantic==2.6.4`
+- Pre-download the XTTS2 model weights (~2 GB) with `COQUI_TOS_AGREED=1`
+- Register the env as a Jupyter/Kaggle notebook kernel (`Python (bulul-xtts2)`)
 - Set up `HF_HOME`, `TRANSFORMERS_CACHE`, and `TORCH_HOME` cache directories under `/kaggle/working/.cache/`
 
 > **Note:** The script is idempotent — re-running it safely skips already-complete steps.
+
+#### Why two install stages?
+
+`torch` must be pulled from the PyTorch CUDA 12.1 wheel index
+(`https://download.pytorch.org/whl/cu121`), which is not PyPI.
+Installing it *before* `TTS==0.22.0` lets pip resolve the rest of the dependency
+graph against the correct torch version and avoids `numpy`/`scipy` version
+conflicts seen with a single-pass `pip install -r requirements.txt`.
 
 #### Output mode
 

@@ -71,6 +71,11 @@ fi
 log "Step 2/2 Pre-downloading XTTS2 model (~2 GB from HuggingFace)…"
 log_v "  HF_HOME=$HF_HOME"
 
+# COQUI_TOS_AGREED=1 accepts the Coqui XTTS2 license non-interactively.
+# By running this script you confirm you have read and agree to the terms at:
+#   https://coqui.ai/cpml
+export COQUI_TOS_AGREED="${COQUI_TOS_AGREED:-1}"
+
 # Trigger the download by importing TTS and listing the model.
 # This ensures weights are in the HF cache before first synthesis.
 run_q python - << 'PY'
