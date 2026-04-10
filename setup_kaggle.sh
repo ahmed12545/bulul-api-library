@@ -73,7 +73,7 @@ if command -v espeak-ng >/dev/null 2>&1; then
 else
     log "  Installing espeak-ng via apt-get…"
     run_q apt-get install -y -q espeak-ng libespeak-ng-dev || \
-        warn "apt-get install espeak-ng failed — phonemizer may not work. Install manually if needed."
+        warn "apt-get install espeak-ng FAILED — phonemizer REQUIRES espeak-ng. Synthesis will fail without it. Install manually: sudo apt-get install -y espeak-ng libespeak-ng-dev"
 fi
 ok "espeak-ng ready"
 

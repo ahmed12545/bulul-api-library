@@ -6,7 +6,7 @@
 #   3. pip install -r requirements-styletts2.txt
 #
 # Pinned to the exact set validated against Kaggle GPU (CUDA 12.1, Python 3.10):
-styletts2>=0.1
+styletts2>=0.1,<2.0
 phonemizer>=3.2,<4.0
 librosa>=0.10,<0.11
 soundfile>=0.12

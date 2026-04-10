@@ -55,6 +55,7 @@ _LEGACY_FLAGS = {
     "--no-rvc",
     "--ckpt",
     "--ckpt-name",
+    "--config",
 }
 
 
