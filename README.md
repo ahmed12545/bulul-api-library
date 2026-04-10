@@ -245,7 +245,7 @@ Each environment is created and managed by `setup_kaggle.sh`. They are
 |---|---|---|
 | StyleTTS2 checkpoint (LJSpeech) | `models/styletts2/epoch_2nd_00100.pth` | Downloaded by `bash setup_kaggle.sh` |
 | StyleTTS2 checkpoint (LibriTTS epoch 20) | `models/styletts2/epoch_2nd_00020_libri.pth` | Downloaded by `bash setup_kaggle.sh` |
-| StyleTTS2 checkpoint (LibriTTS epoch 100) | `models/styletts2/epochs_2nd_00100_libri.pth` | Downloaded by `bash setup_kaggle.sh` |
+| StyleTTS2 checkpoint (LibriTTS epoch 100) | `models/styletts2/epoch_2nd_00100_libri.pth` | Downloaded by `bash setup_kaggle.sh` |
 | StyleTTS2 config (LJSpeech) | `models/styletts2/config.yml` | Downloaded by `bash setup_kaggle.sh` |
 | StyleTTS2 config (LibriTTS) | `models/styletts2/config_libri.yml` | Downloaded by `bash setup_kaggle.sh` |
 | StyleTTS2 source | `models/StyleTTS2/` | Cloned by `bash setup_kaggle.sh` |
@@ -285,7 +285,7 @@ conda run -n bulul-styletts2 python -u scripts/synthesize.py \
 conda run -n bulul-styletts2 python -u scripts/synthesize.py \
     --text "Welcome to the podcast." \
     --output /tmp/base_libri100.wav \
-    --ckpt  models/styletts2/epochs_2nd_00100_libri.pth \
+    --ckpt  models/styletts2/epoch_2nd_00100_libri.pth \
     --config models/styletts2/config_libri.yml
 
 # Force CPU inference (no GPU required)

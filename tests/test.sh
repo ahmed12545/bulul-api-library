@@ -39,7 +39,7 @@
 # Required assets (before running):
 #   models/styletts2/epoch_2nd_00100.pth       — StyleTTS2 LJSpeech checkpoint (ljspeech)
 #   models/styletts2/epoch_2nd_00020_libri.pth — StyleTTS2 LibriTTS checkpoint (libri, epoch 20)
-#   models/styletts2/epochs_2nd_00100_libri.pth — StyleTTS2 LibriTTS checkpoint (libri-100, epoch 100)
+#   models/styletts2/epoch_2nd_00100_libri.pth  — StyleTTS2 LibriTTS checkpoint (libri-100, epoch 100)
 #   models/styletts2/config.yml                — LJSpeech config
 #   models/styletts2/config_libri.yml          — LibriTTS config (shared by libri and libri-100)
 #   models/StyleTTS2/                          — StyleTTS2 source tree
@@ -295,7 +295,7 @@ case "$CKPT_NAME" in
         CFG="$REPO_ROOT/models/styletts2/config_libri.yml"
         ;;
     libri-100)
-        CKPT="$REPO_ROOT/models/styletts2/epochs_2nd_00100_libri.pth"
+        CKPT="$REPO_ROOT/models/styletts2/epoch_2nd_00100_libri.pth"
         CFG="$REPO_ROOT/models/styletts2/config_libri.yml"
         ;;
     *)

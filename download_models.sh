@@ -100,7 +100,7 @@ log_v "  styletts2 pip package installed"
 CKPT_CATALOG=(
     "ljspeech|https://huggingface.co/yl4579/StyleTTS2-LJSpeech/resolve/main/Models/LJSpeech/epoch_2nd_00100.pth|https://huggingface.co/yl4579/StyleTTS2-LJSpeech/resolve/main/Models/LJSpeech/config.yml|epoch_2nd_00100.pth|config.yml"
     "libri|https://huggingface.co/yl4579/StyleTTS2-LibriTTS/resolve/main/Models/LibriTTS/epochs_2nd_00020.pth|https://huggingface.co/yl4579/StyleTTS2-LibriTTS/resolve/main/Models/LibriTTS/config.yml|epoch_2nd_00020_libri.pth|config_libri.yml"
-    "libri-100|https://huggingface.co/yl4579/StyleTTS2-LibriTTS/resolve/main/Models/LibriTTS/epochs_2nd_00100.pth|https://huggingface.co/yl4579/StyleTTS2-LibriTTS/resolve/main/Models/LibriTTS/config.yml|epochs_2nd_00100_libri.pth|config_libri.yml"
+    "libri-100|https://huggingface.co/yl4579/StyleTTS2-LibriTTS/resolve/main/Models/LibriTTS/epochs_2nd_00100.pth|https://huggingface.co/yl4579/StyleTTS2-LibriTTS/resolve/main/Models/LibriTTS/config.yml|epoch_2nd_00100_libri.pth|config_libri.yml"
 )
 
 # Which checkpoints to install: comma-separated labels from CKPT_CATALOG.

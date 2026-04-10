@@ -53,7 +53,7 @@ def _load_tts_model():
     _ckpt_map = {
         "ljspeech":  ("epoch_2nd_00100.pth",      "config.yml"),
         "libri":     ("epoch_2nd_00020_libri.pth", "config_libri.yml"),
-        "libri-100": ("epochs_2nd_00100_libri.pth", "config_libri.yml"),
+        "libri-100": ("epoch_2nd_00100_libri.pth", "config_libri.yml"),
     }
     if ckpt_name not in _ckpt_map:
         print(
