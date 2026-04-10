@@ -19,6 +19,11 @@ from pydantic import BaseModel, Field
 
 load_dotenv()
 
+# ── Headless / Kaggle compatibility ──────────────────────────────────────────
+_mpl = os.environ.get("MPLBACKEND", "")
+if not _mpl or _mpl.startswith("module://"):
+    os.environ["MPLBACKEND"] = "Agg"
+
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
@@ -26,7 +31,7 @@ async def lifespan(_app: FastAPI):
     yield
 
 
-app = FastAPI(title="Bulul API", version="0.1.0", lifespan=lifespan)
+app = FastAPI(title="Bulul API", version="0.2.0", lifespan=lifespan)
 
 TMP_DIR = Path(os.getenv("TMP_AUDIO_DIR", "runtime/tmp"))
 TMP_DIR.mkdir(parents=True, exist_ok=True)
@@ -37,40 +42,36 @@ LANGUAGE_LEVELS = {"A1", "A2", "B1", "B2", "C1", "C2"}
 
 # ── TTS model (loaded once at startup) ───────────────────────────────────────
 _tts_model = None
+_tts_device = "cpu"
+
+
+def _find_default_ref_wav() -> Path | None:
+    """Return the first .wav found in 'voice refs/', or None."""
+    voice_refs = Path("voice refs")
+    if voice_refs.is_dir():
+        wavs = sorted(voice_refs.glob("*.wav"))
+        if wavs:
+            return wavs[0]
+    return None
 
 
 def _load_tts_model():
-    """Load StyleTTS2 onto GPU (or CPU) once at startup."""
-    global _tts_model  # noqa: PLW0603
+    """Load XTTS2 onto GPU (or CPU) once at startup."""
+    global _tts_model, _tts_device  # noqa: PLW0603
+
     if _tts_model is not None:
         return _tts_model
 
-    models_dir = Path("models/styletts2")
-    ckpt = models_dir / "epoch_2nd_00100.pth"
-    cfg = models_dir / "config.yml"
-
-    if not ckpt.exists() or not cfg.exists():
-        # Model not downloaded yet — run in stub/demo mode
-        print("[app] WARNING: StyleTTS2 model not found. Running in stub mode.")
-        _tts_model = "stub"
-        return _tts_model
-
     try:
-        import torch  # noqa: F401 – optional at import time
+        import torch
+        from TTS.api import TTS  # type: ignore[import]
 
-        # StyleTTS2 uses its own inference helper; import lazily so the app
-        # still starts in stub mode when the package is not installed.
-        from styletts2 import tts as styletts2_tts  # type: ignore[import]
-
-        device = "cuda" if torch.cuda.is_available() else "cpu"
-        print(f"[app] Loading StyleTTS2 on {device}…")
-        _tts_model = styletts2_tts.StyleTTS2(
-            model_checkpoint_path=str(ckpt),
-            config_path=str(cfg),
-        )
-        print("[app] StyleTTS2 loaded ✅")
+        _tts_device = "cuda" if torch.cuda.is_available() else "cpu"
+        print(f"[app] Loading XTTS2 on {_tts_device}…")
+        _tts_model = TTS("tts_models/multilingual/multi-dataset/xtts_v2").to(_tts_device)
+        print("[app] XTTS2 loaded ✅")
     except Exception as exc:  # noqa: BLE001
-        print(f"[app] WARNING: Could not load StyleTTS2 ({exc}). Running in stub mode.")
+        print(f"[app] WARNING: Could not load XTTS2 ({exc}). Running in stub mode.")
         _tts_model = "stub"
 
     return _tts_model
@@ -144,7 +145,7 @@ def _generate_script_groq(topic: str, level: str) -> str:
 
 
 def _synthesise_audio(script: str, output_path: Path, fmt: str) -> None:
-    """Convert script to audio using StyleTTS2, or generate a silent stub."""
+    """Convert script to audio using XTTS2, or generate a silent stub."""
     model = _load_tts_model()
 
     if model == "stub":
@@ -173,22 +174,32 @@ def _synthesise_audio(script: str, output_path: Path, fmt: str) -> None:
                 )
                 wav_path.unlink(missing_ok=True)
             except Exception:  # noqa: BLE001
-                # ffmpeg not available — return wav instead
-                output_path.parent.mkdir(parents=True, exist_ok=True)
                 wav_path.rename(output_path.with_suffix(".wav"))
         return
 
-    # Real StyleTTS2 synthesis
+    # Real XTTS2 synthesis
     import numpy as np
     import soundfile as sf
 
+    ref_wav = _find_default_ref_wav()
     segments = [s.strip() for s in script.split("[SEGMENT]") if s.strip()]
     chunks: list[np.ndarray] = []
-    sample_rate = 24000
+    sample_rate = 24000  # XTTS2 native rate
 
     for i, segment in enumerate(segments):
         print(f"[app] Synthesising segment {i + 1}/{len(segments)}…")
-        audio = model.inference(segment, output_sample_rate=sample_rate)
+        if ref_wav:
+            audio = model.tts(
+                text=segment,
+                speaker_wav=str(ref_wav),
+                language="en",
+            )
+        else:
+            audio = model.tts(
+                text=segment,
+                speaker=model.speakers[0] if model.speakers else None,
+                language="en",
+            )
         chunks.append(np.array(audio, dtype=np.float32))
 
     combined = np.concatenate(chunks) if chunks else np.zeros(sample_rate, dtype=np.float32)

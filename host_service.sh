@@ -4,8 +4,8 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-# The API uses StyleTTS2; run it inside the bulul-styletts2 env.
-CONDA_ENV_NAME="bulul-styletts2"
+# The API uses XTTS2; run it inside the bulul-xtts2 env.
+CONDA_ENV_NAME="bulul-xtts2"
 MINICONDA_DIR="$HOME/miniconda3"
 APP_PORT="${APP_PORT:-8000}"
 
@@ -39,16 +39,10 @@ export TORCH_HOME="${TORCH_HOME:-/kaggle/working/.cache/torch}"
 mkdir -p "$HF_HOME" "$TORCH_HOME"
 log "Cache dirs: HF_HOME=$HF_HOME  TORCH_HOME=$TORCH_HOME"
 
-# ── 4. Export PYTHONPATH so styletts2 source tree is importable ───────────────
-# StyleTTS2 has no setup.py so it is cloned into models/StyleTTS2.
-# Adding it to PYTHONPATH lets app.py do `from styletts2 import tts`.
-STYLETTS2_SRC="$SCRIPT_DIR/models/StyleTTS2"
-if [ -d "$STYLETTS2_SRC" ]; then
-    export PYTHONPATH="${STYLETTS2_SRC}:${PYTHONPATH:-}"
-    log "PYTHONPATH includes StyleTTS2 source at $STYLETTS2_SRC"
-else
-    log "WARNING: $STYLETTS2_SRC not found. Run setup_kaggle.sh first to clone StyleTTS2. App will start in stub mode (silent audio only)."
-fi
+# ── 4. Set MPLBACKEND for headless operation ──────────────────────────────────
+case "${MPLBACKEND:-}" in
+    ""|module://*) export MPLBACKEND="Agg" ;;
+esac
 
 # ── 5. Configure ngrok ────────────────────────────────────────────────────────
 log "Configuring ngrok…"
@@ -85,7 +79,7 @@ log "   Health check    : $PUBLIC_URL/health"
 log "   Podcast endpoint: $PUBLIC_URL/generate-podcast"
 log ""
 log "Press Ctrl+C to stop."
-log "NOTE: If this is the first run after setup, the model may take several minutes to load."
+log "NOTE: If this is the first run, XTTS2 may take several minutes to load."
 
 # ── 8. Wait and handle shutdown ───────────────────────────────────────────────
 cleanup() {
