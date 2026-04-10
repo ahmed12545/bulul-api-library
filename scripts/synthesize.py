@@ -3,13 +3,29 @@
 scripts/synthesize.py — XTTS2 text-to-speech inference helper with voice cloning.
 
 Usage:
+    # Voice cloning from a reference WAV:
     python -u scripts/synthesize.py \\
         --text "Hello world." \\
         --output out.wav \\
         --ref-wav "voice refs/my_voice.wav"
 
+    # Built-in base speaker by ID (no reference WAV required):
+    python -u scripts/synthesize.py \\
+        --text "Hello world." \\
+        --output out.wav \\
+        --voice-id "Puck"
+
+    # List all built-in speaker IDs:
+    python -u scripts/synthesize.py --list-speakers
+
 Place reference WAVs in the 'voice refs/' folder at the repo root.
-If --ref-wav is omitted, the first .wav found in 'voice refs/' is used.
+If --ref-wav is omitted and --voice-id is not set, the first .wav found in
+'voice refs/' is used.  If neither is available, the first built-in speaker
+is used as a safe fallback.
+
+Built-in XTTS2 base speakers include (case-insensitive match):
+    Puck, Fenrir, Claribel Dervla, Daisy Studious, Ana Florence, Andrew Chipper, …
+    Run with --list-speakers to see the full list from the loaded model.
 
 All print statements use flush=True for Kaggle-friendly unbuffered output
 (avoids apparent hangs in notebook cells).
@@ -69,10 +85,10 @@ def main() -> None:
     _check_legacy_flags()
 
     parser = argparse.ArgumentParser(
-        description="XTTS2 inference helper — voice cloning from reference WAV"
+        description="XTTS2 inference helper — voice cloning or built-in speaker synthesis"
     )
-    parser.add_argument("--text", required=True, help="Text to synthesize")
-    parser.add_argument("--output", required=True, help="Output .wav path")
+    parser.add_argument("--text", help="Text to synthesize")
+    parser.add_argument("--output", help="Output .wav path")
     parser.add_argument(
         "--ref-wav",
         default=None,
@@ -80,8 +96,25 @@ def main() -> None:
         help=(
             "Reference WAV file for voice cloning (3–30 s of clean speech). "
             "If omitted, the first .wav found in 'voice refs/' is used. "
-            "Place reference files in the 'voice refs/' folder."
+            "Cannot be combined with --voice-id."
         ),
+    )
+    parser.add_argument(
+        "--voice-id",
+        default=None,
+        metavar="SPEAKER",
+        help=(
+            "Built-in XTTS2 base speaker ID to use instead of a reference WAV. "
+            "Examples: 'Puck', 'Fenrir', 'Ana Florence', 'Andrew Chipper'. "
+            "Run with --list-speakers to see all available IDs. "
+            "Cannot be combined with --ref-wav."
+        ),
+    )
+    parser.add_argument(
+        "--list-speakers",
+        action="store_true",
+        default=False,
+        help="Load the XTTS2 model and print all built-in speaker IDs, then exit.",
     )
     parser.add_argument(
         "--language",
@@ -99,22 +132,36 @@ def main() -> None:
     )
     args = parser.parse_args()
 
+    # --list-speakers doesn't need --text / --output
+    if not args.list_speakers:
+        if not args.text:
+            parser.error("--text is required (unless --list-speakers is used)")
+        if not args.output:
+            parser.error("--output is required (unless --list-speakers is used)")
+
+    if args.ref_wav and args.voice_id:
+        log("ERROR: --ref-wav and --voice-id are mutually exclusive. Use one or the other.")
+        sys.exit(1)
+
     repo_root = Path(__file__).parent.parent
     voice_refs_dir = repo_root / "voice refs"
-    out_path = Path(args.output)
+    out_path = Path(args.output) if args.output else None
 
-    log(f"Output   : {out_path}")
-    log(f"Language : {args.language}")
+    if not args.list_speakers:
+        log(f"Output   : {out_path}")
+        log(f"Language : {args.language}")
 
     # ── Resolve reference WAV ─────────────────────────────────────────────────
+    ref_wav: Path | None = None
     if args.ref_wav:
         ref_wav = Path(args.ref_wav)
-    else:
+    elif not args.voice_id:
+        # No explicit voice-id → fall back to auto-detect from voice refs/
         ref_wav = _find_default_ref_wav(voice_refs_dir)
         if ref_wav:
             log(f"Ref WAV  : {ref_wav} (auto-detected from 'voice refs/')")
         else:
-            log("Ref WAV  : (none found in 'voice refs/' — using XTTS2 built-in speaker)")
+            log("Ref WAV  : (none found in 'voice refs/' — will use built-in speaker)")
 
     if ref_wav and not ref_wav.exists():
         log(f"ERROR: Reference WAV not found: {ref_wav}")
@@ -143,7 +190,7 @@ def main() -> None:
         from TTS.api import TTS  # type: ignore[import]
     except ImportError as exc:
         log(f"ERROR: Could not import TTS package: {exc}")
-        log("  Install with:  pip install TTS")
+        log("  Install with:  pip install TTS==0.22.0")
         log("  Or re-run setup:  bash setup_kaggle.sh")
         sys.exit(1)
 
@@ -153,6 +200,49 @@ def main() -> None:
         log(f"ERROR: Failed to load XTTS2 model: {exc}")
         sys.exit(1)
     log(f"Model loaded in {time.time() - t0:.1f}s")
+
+    # ── --list-speakers mode ──────────────────────────────────────────────────
+    if args.list_speakers:
+        available = list(tts.speakers) if tts.speakers else []
+        print(f"[synthesize] Built-in XTTS2 speakers ({len(available)} total):", flush=True)
+        for s in available:
+            print(f"  {s}", flush=True)
+        return
+
+    # ── Resolve speaker name for built-in mode ────────────────────────────────
+    speaker_name: str | None = None
+    if ref_wav:
+        log(f"Mode     : voice cloning  (ref: {ref_wav})")
+    else:
+        available_speakers = list(tts.speakers) if tts.speakers else []
+        if args.voice_id:
+            # Case-insensitive match so 'puck' finds 'Puck'
+            vid_lower = args.voice_id.strip().lower()
+            matched = next(
+                (s for s in available_speakers if s.lower() == vid_lower),
+                None,
+            )
+            if matched:
+                speaker_name = matched
+                log(f"Mode     : built-in speaker  (id: {speaker_name})")
+            else:
+                log(f"ERROR: Speaker ID '{args.voice_id}' not found in this XTTS2 model.")
+                log(f"  Available IDs ({len(available_speakers)} total):")
+                for s in available_speakers[:30]:
+                    log(f"    {s}")
+                if len(available_speakers) > 30:
+                    log(f"    … and {len(available_speakers) - 30} more (run --list-speakers)")
+                log("  Tip: Run with --list-speakers to see all available IDs.")
+                sys.exit(1)
+        else:
+            # Fallback: first available built-in speaker
+            speaker_name = available_speakers[0] if available_speakers else None
+            if speaker_name:
+                log(f"Mode     : built-in speaker  (fallback: {speaker_name})")
+            else:
+                log("ERROR: No built-in speakers found and no ref-wav supplied.")
+                log("  Use --ref-wav or --voice-id to specify a voice.")
+                sys.exit(1)
 
     # ── Synthesise ────────────────────────────────────────────────────────────
     import numpy as np
@@ -179,10 +269,9 @@ def main() -> None:
                     language=args.language,
                 )
             else:
-                # No reference WAV — use a built-in XTTS2 speaker
                 audio = tts.tts(
                     text=segment,
-                    speaker=tts.speakers[0] if tts.speakers else None,
+                    speaker=speaker_name,
                     language=args.language,
                 )
         except Exception as exc:  # noqa: BLE001
@@ -193,6 +282,7 @@ def main() -> None:
 
     combined = np.concatenate(chunks) if chunks else np.zeros(sample_rate, dtype=np.float32)
 
+    assert out_path is not None
     out_path.parent.mkdir(parents=True, exist_ok=True)
     sf.write(str(out_path), combined, sample_rate)
     sz = out_path.stat().st_size
