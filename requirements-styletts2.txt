@@ -5,20 +5,50 @@
 #   2. pip install torch==2.1.2 torchaudio==2.1.2 --index-url https://download.pytorch.org/whl/cu121
 #   3. pip install -r requirements-styletts2.txt
 #   4. pip install "styletts2>=0.1,<2.0" --no-deps
-#      (styletts2 pins huggingface_hub==0.19.4 which conflicts with huggingface_hub>=0.20;
+#      (styletts2 pins huggingface_hub<0.20 which conflicts with newer transformers;
 #       install it with --no-deps so its transitive dep pin is skipped.
-#       Its actual runtime deps are covered by this file.)
+#       All styletts2 runtime deps are explicitly listed in this file instead.)
+#   5. conda run python -c "import nltk; nltk.download('punkt_tab', quiet=True)"
+#      (NLTK tokenizer data required by styletts2.tts at import time)
 #
-# Pinned to the exact set validated against Kaggle GPU (CUDA 12.1, Python 3.10):
+# All versions validated against Kaggle GPU T4/P100 (CUDA 12.1, Python 3.10).
+# Strict pins (marked !) are required for binary/API compatibility; do not relax.
+
+# ── Core audio processing ──────────────────────────────────────────────────────
 phonemizer>=3.2,<4.0
 librosa>=0.10,<0.11
-soundfile>=0.12
-scipy>=1.10,<1.13
+soundfile>=0.12,<0.13
+pydub>=0.25.1,<0.26.0          # ! styletts2 0.1.x audio I/O; 0.26+ has breaking changes
+
+# ── Scientific computing ───────────────────────────────────────────────────────
+scipy>=1.10,<2.0
 numpy>=1.24,<2.0
-transformers>=4.30,<5.0
-huggingface_hub>=0.20
-# styletts2 transitive deps (covered here because styletts2 itself is installed --no-deps):
-munch>=2.5.0
-pyyaml>=5.4.1
-pydantic==2.6.4
-ipykernel==6.29.3
+
+# ── HuggingFace / ML stack ────────────────────────────────────────────────────
+transformers>=4.36,<5.0
+accelerate>=0.25.0,<0.26.0     # ! styletts2 0.1.x tested against accelerate 0.25.x only
+huggingface_hub>=0.20           # newer than styletts2's own pin; works at runtime
+cached-path>=1.5.1,<2.0        # styletts2 model download helper
+
+# ── NLP / phonemization ────────────────────────────────────────────────────────
+nltk>=3.8.1,<4.0               # word tokenizer; punkt_tab data bootstrapped in setup (Stage E)
+gruut>=2.3.4,<3.0              # G2P backend used by styletts2.tts at import time
+gruut-ipa>=0.13.0,<0.14.0      # ! paired with gruut 2.3.x
+gruut-lang-en>=2.0.0,<3.0      # English phoneme data for gruut
+
+# ── Neural-network / tensor utilities ─────────────────────────────────────────
+einops>=0.7.0,<0.8.0           # ! styletts2 uses einops.rearrange; 0.8+ has breaking API
+einops-exts>=0.0.4,<0.0.5      # ! paired with einops 0.7.x
+networkx>=2.8.8,<3.0           # ! gruut dependency; networkx 3.x API is incompatible
+
+# ── styletts2 transitive deps (all installed --no-deps; provided explicitly here) ──
+munch>=4.0.0,<5.0              # ! styletts2 0.1.x uses munch 4.x dict-access API
+pyyaml>=6.0.1,<7.0             # ! styletts2 config loading uses yaml.safe_load
+matplotlib>=3.7.0,<4.0         # used in styletts2 internals (plotting/signal utils)
+tqdm>=4.66.1,<5.0
+typing-extensions>=4.9.0,<5.0
+filelock>=3.12.4,<3.13         # ! styletts2's own pin; keep in sync
+
+# ── Kaggle / notebook integration ─────────────────────────────────────────────
+pydantic>=2.6,<3.0
+ipykernel>=6.29
