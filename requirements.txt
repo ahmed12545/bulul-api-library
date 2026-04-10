@@ -9,9 +9,6 @@ requests==2.31.0
 numpy==1.26.4
 scipy==1.13.0
 soundfile==0.12.1
-# StyleTTS2 Python package — provides the `styletts2.tts.StyleTTS2` inference API
-# used by scripts/synthesize.py.  The yl4579/StyleTTS2 source tree cloned into
-# models/StyleTTS2/ uses a training-only layout (no installable `styletts2`
-# package), so we install the pip wrapper separately.
-styletts2==0.1.6
-einops_exts
+# XTTS2 — Coqui TTS package providing the XTTS v2 model for zero-shot voice cloning.
+# Includes torch, torchaudio, and all required inference dependencies.
+TTS>=0.22.0

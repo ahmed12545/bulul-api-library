@@ -1,47 +1,45 @@
-# tests/podcast_6voices.yaml — 6-voice podcast test configuration
+# tests/podcast_6voices.yaml — multi-voice XTTS2 cloning configuration (template)
 #
 # Usage:
-#   bash tests/test.sh --config tests/podcast_6voices.yaml
+#   bash tests/test.sh --ref-wav "voice refs/speaker1.wav"
 #
-# Before running, place your RVC voice model files in models/rvc/:
-#   models/rvc/speaker1.pth   (and optionally speaker1.index, etc.)
+# This file documents the expected 'voice refs/' folder layout for a
+# 6-speaker podcast setup.  Place your reference WAVs in the 'voice refs/'
+# folder and pass --ref-wav to select the active cloning reference.
 #
-# Download pre-trained RVC voice models from:
-#   https://huggingface.co/models?search=rvc
-#
-# To generate files without RVC voice models (StyleTTS2 only):
-#   bash tests/test.sh --text "Your text here." --no-rvc
+# Reference WAV guidelines:
+#   - 6–30 s of clean, clear speech (longer = better similarity)
+#   - WAV format, 22050 or 44100 Hz, mono or stereo
+#   - Minimal background noise
+#   - Language should match the synthesis language (--language)
 
-# Optional: override the synthesized text
+# Optional: override the synthesized text when running the test script
 text: "Welcome back to the Daily Insight podcast. Today we break down top stories in technology and culture, with fast context and practical takeaways you can use immediately."
 
+# Voice reference files — place these in the 'voice refs/' folder.
+# Each entry maps a speaker label to its reference WAV.
+# Run one synthesis per speaker by passing --ref-wav to tests/test.sh.
 voices:
   - label: speaker1
-    model: models/rvc/speaker1.pth
-    index: models/rvc/speaker1.index   # optional — remove line if no .index file
-    pitch: 0
+    ref_wav: "voice refs/speaker1.wav"
+    language: en
 
   - label: speaker2
-    model: models/rvc/speaker2.pth
-    index: models/rvc/speaker2.index
-    pitch: 0
+    ref_wav: "voice refs/speaker2.wav"
+    language: en
 
   - label: speaker3
-    model: models/rvc/speaker3.pth
-    index: models/rvc/speaker3.index
-    pitch: 0
+    ref_wav: "voice refs/speaker3.wav"
+    language: en
 
   - label: speaker4
-    model: models/rvc/speaker4.pth
-    index: models/rvc/speaker4.index
-    pitch: 0
+    ref_wav: "voice refs/speaker4.wav"
+    language: en
 
   - label: speaker5
-    model: models/rvc/speaker5.pth
-    index: models/rvc/speaker5.index
-    pitch: 0
+    ref_wav: "voice refs/speaker5.wav"
+    language: en
 
   - label: speaker6
-    model: models/rvc/speaker6.pth
-    index: models/rvc/speaker6.index
-    pitch: 0
+    ref_wav: "voice refs/speaker6.wav"
+    language: en

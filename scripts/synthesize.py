@@ -1,12 +1,22 @@
 #!/usr/bin/env python3
 """
-scripts/synthesize.py — StyleTTS2 text-to-speech inference helper.
+scripts/synthesize.py — XTTS2 text-to-speech inference helper with voice cloning.
 
 Usage:
-    python -u scripts/synthesize.py --text "Hello world." --output out.wav
+    python -u scripts/synthesize.py \\
+        --text "Hello world." \\
+        --output out.wav \\
+        --ref-wav "voice refs/my_voice.wav"
+
+Place reference WAVs in the 'voice refs/' folder at the repo root.
+If --ref-wav is omitted, the first .wav found in 'voice refs/' is used.
 
 All print statements use flush=True for Kaggle-friendly unbuffered output
 (avoids apparent hangs in notebook cells).
+
+NOTE: This project is XTTS2-only.  StyleTTS2 and RVC have been removed.
+      Legacy flags (--ckpt, --ckpt-name, --voice-model, --voice-index,
+      --no-rvc) are no longer accepted and will produce a clear error.
 """
 
 from __future__ import annotations
@@ -18,55 +28,68 @@ import time
 from pathlib import Path
 
 # ── Headless / Kaggle compatibility defaults ──────────────────────────────────
-# Applied BEFORE any matplotlib-dependent import so headless environments
-# (Kaggle, CI) don't crash on backend selection or torch checkpoint loading.
-#
-# MPLBACKEND: Kaggle/Jupyter notebooks export
-#   MPLBACKEND=module://matplotlib_inline.backend_inline, which is only valid
-#   inside the kernel's display loop and is rejected by matplotlib when it is
-#   imported in a subprocess / conda-run path.  Normalise it to "Agg" whenever
-#   the value is absent or starts with "module://" (inline backend token).
-#   A caller-supplied non-inline backend (e.g. "TkAgg") is left untouched.
 _mpl = os.environ.get("MPLBACKEND", "")
 if not _mpl or _mpl.startswith("module://"):
     os.environ["MPLBACKEND"] = "Agg"
 
-# TORCH_FORCE_NO_WEIGHTS_ONLY_LOAD: PyTorch >=2.6 changed torch.load() to
-# weights_only=True by default, which rejects older pickled checkpoints used
-# by StyleTTS2 (ASR/PLBERT loaders).  Default to "1" (legacy behaviour) but
-# respect any explicit value the caller has already set.
-os.environ.setdefault("TORCH_FORCE_NO_WEIGHTS_ONLY_LOAD", "1")
+# ── Legacy flag detection (fail fast with a helpful message) ──────────────────
+_LEGACY_FLAGS = {
+    "--ckpt", "--ckpt-name", "--config",
+    "--voice-model", "--voice-index", "--no-rvc",
+    "--diffusion-steps", "--embedding-scale",
+}
 
 
 def log(msg: str) -> None:
     print(f"[synthesize] {msg}", flush=True)
 
 
+def _check_legacy_flags() -> None:
+    for raw in sys.argv[1:]:
+        name = raw.split("=")[0]
+        if name in _LEGACY_FLAGS:
+            log(f"ERROR: Legacy flag '{name}' is not supported.")
+            log("  This project is XTTS2-only. StyleTTS2 and RVC have been removed.")
+            log("  New usage:")
+            log("    python scripts/synthesize.py \\")
+            log("        --text  'Your text here.' \\")
+            log("        --output out.wav \\")
+            log("        --ref-wav 'voice refs/my_voice.wav'")
+            log("  Place reference WAVs in the 'voice refs/' folder.")
+            sys.exit(1)
+
+
+def _find_default_ref_wav(voice_refs_dir: Path) -> Path | None:
+    """Return the first .wav in 'voice refs/' sorted by name, or None."""
+    wavs = sorted(voice_refs_dir.glob("*.wav"))
+    return wavs[0] if wavs else None
+
+
 def main() -> None:
-    parser = argparse.ArgumentParser(description="StyleTTS2 inference helper")
+    _check_legacy_flags()
+
+    parser = argparse.ArgumentParser(
+        description="XTTS2 inference helper — voice cloning from reference WAV"
+    )
     parser.add_argument("--text", required=True, help="Text to synthesize")
     parser.add_argument("--output", required=True, help="Output .wav path")
     parser.add_argument(
-        "--ckpt",
+        "--ref-wav",
         default=None,
-        help="Checkpoint path (default: models/styletts2/epoch_2nd_00100.pth)",
+        metavar="PATH",
+        help=(
+            "Reference WAV file for voice cloning (3–30 s of clean speech). "
+            "If omitted, the first .wav found in 'voice refs/' is used. "
+            "Place reference files in the 'voice refs/' folder."
+        ),
     )
     parser.add_argument(
-        "--config",
-        default=None,
-        help="Config YAML path (default: models/styletts2/config.yml)",
-    )
-    parser.add_argument(
-        "--diffusion-steps",
-        type=int,
-        default=10,
-        help="Diffusion steps (default: 10; higher = slower but smoother)",
-    )
-    parser.add_argument(
-        "--embedding-scale",
-        type=float,
-        default=1.0,
-        help="Embedding scale / style strength (default: 1.0)",
+        "--language",
+        default="en",
+        help=(
+            "Language code for synthesis (default: en). "
+            "Supported: en, ar, fr, de, es, pt, pl, tr, ru, nl, cs, it, zh-cn, …"
+        ),
     )
     parser.add_argument(
         "--cpu",
@@ -76,83 +99,58 @@ def main() -> None:
     )
     args = parser.parse_args()
 
-    log(f"{'MPLBACKEND':<35}: {os.environ.get('MPLBACKEND')}")
-    log(f"{'TORCH_FORCE_NO_WEIGHTS_ONLY_LOAD':<35}: {os.environ.get('TORCH_FORCE_NO_WEIGHTS_ONLY_LOAD')}")
-
     repo_root = Path(__file__).parent.parent
-    ckpt = Path(args.ckpt) if args.ckpt else repo_root / "models/styletts2/epoch_2nd_00100.pth"
-    cfg = Path(args.config) if args.config else repo_root / "models/styletts2/config.yml"
-    styletts2_src = repo_root / "models/StyleTTS2"
+    voice_refs_dir = repo_root / "voice refs"
+    out_path = Path(args.output)
 
-    log(f"StyleTTS2 source : {styletts2_src}")
-    log(f"Checkpoint       : {ckpt}")
-    log(f"Config           : {cfg}")
-    log(f"Output           : {args.output}")
+    log(f"Output   : {out_path}")
+    log(f"Language : {args.language}")
 
-    # ── Validate required assets ──────────────────────────────────────────────
-    missing: list[str] = []
-    if not styletts2_src.is_dir():
-        missing.append(f"StyleTTS2 source directory not found: {styletts2_src}")
-    if not ckpt.exists():
-        missing.append(f"Checkpoint not found: {ckpt}")
-    if not cfg.exists():
-        missing.append(f"Config not found: {cfg}")
+    # ── Resolve reference WAV ─────────────────────────────────────────────────
+    if args.ref_wav:
+        ref_wav = Path(args.ref_wav)
+    else:
+        ref_wav = _find_default_ref_wav(voice_refs_dir)
+        if ref_wav:
+            log(f"Ref WAV  : {ref_wav} (auto-detected from 'voice refs/')")
+        else:
+            log("Ref WAV  : (none found in 'voice refs/' — using XTTS2 built-in speaker)")
 
-    if missing:
-        for m in missing:
-            log(f"ERROR: {m}")
-        log("Run 'bash setup_kaggle.sh' (or 'bash download_models.sh') to download assets.")
+    if ref_wav and not ref_wav.exists():
+        log(f"ERROR: Reference WAV not found: {ref_wav}")
+        log("  Place .wav reference files in the 'voice refs/' folder.")
+        log("  See 'voice refs/README.md' for guidance.")
         sys.exit(1)
 
-    # ── Add StyleTTS2 source to import path ───────────────────────────────────
-    sys.path.insert(0, str(styletts2_src))
-
+    # ── Device selection ──────────────────────────────────────────────────────
     log("Importing torch…")
     import torch  # noqa: F401
 
     if args.cpu:
         device = "cpu"
-        log("Device: cpu (--cpu flag set; GPU bypassed)")
+        log("Device   : cpu (--cpu flag set; GPU bypassed)")
     elif torch.cuda.is_available():
         device = "cuda"
-        log(f"Device: cuda (GPU: {torch.cuda.get_device_name(0)})")
+        log(f"Device   : cuda (GPU: {torch.cuda.get_device_name(0)})")
     else:
         device = "cpu"
-        log("Device: cpu (no CUDA-capable GPU detected)")
+        log("Device   : cpu (no CUDA-capable GPU detected)")
 
-    log("Importing StyleTTS2…")
-    try:
-        from styletts2 import tts as styletts2_tts  # type: ignore[import]
-    except ImportError as exc:
-        log(f"ERROR: Could not import StyleTTS2 pip package: {exc}")
-        # Diagnose the local source tree layout to give an actionable message.
-        _py_files = sorted(styletts2_src.glob("*.py")) if styletts2_src.is_dir() else []
-        _has_pkg = (styletts2_src / "styletts2").is_dir()
-        if _has_pkg:
-            log("  models/StyleTTS2/styletts2/ directory found but import still failed.")
-            log("  Possible cause: missing dependency (e.g. einops_exts, phonemizer).")
-        elif _py_files:
-            _names = [f.name for f in _py_files[:6]]
-            log(f"  models/StyleTTS2 contains {len(_py_files)} .py file(s): {_names} …")
-            log("  This is the yl4579/StyleTTS2 training-layout tree — it does NOT")
-            log("  expose an installable 'styletts2' Python package on its own.")
-        else:
-            log("  models/StyleTTS2 is empty or missing Python files.")
-        log("  Fix: install the pip package in your active environment:")
-        log("    pip install 'styletts2==0.1.6' einops_exts")
-        log("  Or re-run setup to install all dependencies:")
-        log("    bash setup_kaggle.sh")
-        sys.exit(1)
-
-    log("Loading model (may take a few minutes on first run)…")
+    # ── Load XTTS2 model ──────────────────────────────────────────────────────
+    log("Loading XTTS2 model (first run downloads ~2 GB from HuggingFace)…")
     t0 = time.time()
     try:
-        model = styletts2_tts.StyleTTS2(
-            model_checkpoint_path=str(ckpt),
-            config_path=str(cfg),
-        )
-    except (RuntimeError, OSError, ValueError) as exc:
-        log(f"ERROR: Failed to load StyleTTS2 model: {exc}")
+        from TTS.api import TTS  # type: ignore[import]
+    except ImportError as exc:
+        log(f"ERROR: Could not import TTS package: {exc}")
+        log("  Install with:  pip install TTS")
+        log("  Or re-run setup:  bash setup_kaggle.sh")
+        sys.exit(1)
+
+    try:
+        tts = TTS("tts_models/multilingual/multi-dataset/xtts_v2").to(device)
+    except Exception as exc:  # noqa: BLE001
+        log(f"ERROR: Failed to load XTTS2 model: {exc}")
         sys.exit(1)
     log(f"Model loaded in {time.time() - t0:.1f}s")
 
@@ -160,34 +158,45 @@ def main() -> None:
     import numpy as np
     import soundfile as sf
 
+    # Split on [SEGMENT] markers (kept for backward-compat with multi-segment scripts).
     segments = [s.strip() for s in args.text.split("[SEGMENT]") if s.strip()]
     if not segments:
         log("ERROR: No text to synthesise (empty after stripping)")
         sys.exit(1)
 
-    chunks: list[np.ndarray] = []
-    sample_rate = 24000
-
     log(f"Synthesising {len(segments)} segment(s) ({len(args.text)} chars total)…")
+    chunks: list[np.ndarray] = []
+    sample_rate = 24000  # XTTS2 native output rate
+
     for i, segment in enumerate(segments, 1):
         log(f"  Segment {i}/{len(segments)} ({len(segment)} chars)…")
         t_seg = time.time()
-        audio = model.inference(
-            segment,
-            diffusion_steps=args.diffusion_steps,
-            embedding_scale=args.embedding_scale,
-            output_sample_rate=sample_rate,
-        )
+        try:
+            if ref_wav:
+                audio = tts.tts(
+                    text=segment,
+                    speaker_wav=str(ref_wav),
+                    language=args.language,
+                )
+            else:
+                # No reference WAV — use a built-in XTTS2 speaker
+                audio = tts.tts(
+                    text=segment,
+                    speaker=tts.speakers[0] if tts.speakers else None,
+                    language=args.language,
+                )
+        except Exception as exc:  # noqa: BLE001
+            log(f"ERROR: Synthesis failed on segment {i}: {exc}")
+            sys.exit(1)
         chunks.append(np.array(audio, dtype=np.float32))
         log(f"  Segment {i} done in {time.time() - t_seg:.1f}s")
 
     combined = np.concatenate(chunks) if chunks else np.zeros(sample_rate, dtype=np.float32)
 
-    out_path = Path(args.output)
     out_path.parent.mkdir(parents=True, exist_ok=True)
     sf.write(str(out_path), combined, sample_rate)
     sz = out_path.stat().st_size
-    log(f"Saved → {out_path} ({sz:,} bytes, {len(combined)/sample_rate:.1f}s audio)")
+    log(f"Saved → {out_path} ({sz:,} bytes, {len(combined) / sample_rate:.1f}s audio)")
 
 
 if __name__ == "__main__":

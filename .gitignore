@@ -3,6 +3,11 @@ runtime/tmp/
 runtime/logs/
 models/
 
+# Voice reference WAVs (large binary files — add manually with git add -f)
+voice refs/*.wav
+voice refs/*.mp3
+voice refs/*.flac
+
 # Python
 __pycache__/
 *.py[cod]
