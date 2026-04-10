@@ -405,6 +405,63 @@ exit immediately with a clear migration message:
 
 ---
 
+## Troubleshooting
+
+### Conda path mismatch (`No module named 'pkg_resources'` or wrong env)
+
+**Symptom:** `tests/test.sh` or `scripts/synthesize.py` fails with
+`No module named 'pkg_resources'` even though you verified the install in a
+separate cell.
+
+**Root cause:** Different `conda` executables are being used across contexts.
+Kaggle notebooks may have a system-level `conda` earlier on `PATH` that resolves
+to a different installation than `/root/miniconda3/bin/conda`.  A repair run in
+one cell that calls `/root/miniconda3/bin/conda run -n bulul-xtts2 pip install …`
+installs into one env location, while `test.sh` invokes a different `conda` that
+points at an empty or base env — so the packages are never seen.
+
+**How these scripts resolve conda:**
+
+Both `setup_kaggle.sh` and `tests/test.sh` now use an explicit Miniconda binary
+path (`$MINICONDA_DIR/bin/conda`, where `MINICONDA_DIR` defaults to `$HOME/miniconda3`):
+```bash
+CONDA_EXE="$MINICONDA_DIR/bin/conda"   # e.g. /root/miniconda3/bin/conda on Kaggle
+```
+All `conda run` calls go through `$CONDA_EXE` (never the bare `conda` command).
+`tests/test.sh` prints the resolved path at runtime:
+```
+[test] Conda exe  : /root/miniconda3/bin/conda
+[test] Python exe : /root/miniconda3/envs/bulul-xtts2/bin/python
+```
+`scripts/synthesize.py` also prints `sys.executable` and the active conda env
+so any remaining mismatch is immediately visible in the log.
+
+**Quick repair** (if `pkg_resources` is missing in the live env):
+```python
+import subprocess
+# Adjust CONDA_PATH to match your $MINICONDA_DIR/bin/conda value.
+# On Kaggle the default is /root/miniconda3/bin/conda.
+CONDA_PATH = "/root/miniconda3/bin/conda"
+subprocess.run([
+    "bash", "-lc",
+    f'"{CONDA_PATH}" run -n bulul-xtts2 python -m pip install -U pip setuptools wheel '
+    f'&& "{CONDA_PATH}" run -n bulul-xtts2 pip install --no-cache-dir TTS==0.22.0',
+], check=True)
+```
+
+### Smoke test command reference
+
+```bash
+bash tests/test.sh \
+  --text "This is a smoke test for XTTS2 voice cloning in Kaggle." \
+  --ref-wav "voice refs/clip_01.wav" \
+  --output-dir /kaggle/working/xtts_smoke_out
+```
+
+Add `--verbose` to stream all subprocess output to the cell instead of the log file.
+
+---
+
 ## Project structure
 
 ```

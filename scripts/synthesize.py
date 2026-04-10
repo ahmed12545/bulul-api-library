@@ -147,6 +147,12 @@ def main() -> None:
     voice_refs_dir = repo_root / "voice refs"
     out_path = Path(args.output) if args.output else None
 
+    # Diagnostics: print interpreter and active conda env so env-mismatch failures
+    # are immediately visible in the log.
+    log(f"Python   : {sys.executable}")
+    _conda_env = os.environ.get("CONDA_DEFAULT_ENV") or os.environ.get("CONDA_PREFIX", "").rsplit("/", 1)[-1] or "(unknown)"
+    log(f"Conda env: {_conda_env}")
+
     if not args.list_speakers:
         log(f"Output   : {out_path}")
         log(f"Language : {args.language}")

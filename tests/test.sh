@@ -147,12 +147,26 @@ trap 'heartbeat_stop' EXIT INT TERM
 
 # ── Env runner detection ──────────────────────────────────────────────────────
 _ENV_RUNNER=""   # "conda" | "micromamba" | "" (direct python fallback)
+_CONDA_EXE=""    # absolute path to conda executable (set when _ENV_RUNNER=conda)
 
-if [ -f "$MINICONDA_DIR/etc/profile.d/conda.sh" ]; then
+# Prefer the explicit Miniconda binary to avoid PATH-dependent conda ambiguity.
+# On Kaggle this is /root/miniconda3/bin/conda; on other machines it may still
+# need the profile.d sourcing, so we try both.
+if [ -x "$MINICONDA_DIR/bin/conda" ]; then
+    _CONDA_EXE="$MINICONDA_DIR/bin/conda"
+    # Source conda.sh so the shell's `conda activate` helper is also available,
+    # but always use the resolved $_CONDA_EXE for subprocess calls.
+    # shellcheck source=/dev/null
+    [ -f "$MINICONDA_DIR/etc/profile.d/conda.sh" ] && source "$MINICONDA_DIR/etc/profile.d/conda.sh" || true
+    if "$_CONDA_EXE" env list 2>/dev/null | grep -qE "^${ENV_XTTS2}[[:space:]]"; then
+        _ENV_RUNNER="conda"
+    fi
+elif [ -f "$MINICONDA_DIR/etc/profile.d/conda.sh" ]; then
     # shellcheck source=/dev/null
     source "$MINICONDA_DIR/etc/profile.d/conda.sh"
     if conda env list 2>/dev/null | grep -qE "^${ENV_XTTS2}[[:space:]]"; then
         _ENV_RUNNER="conda"
+        _CONDA_EXE="$(command -v conda 2>/dev/null || true)"
     fi
 fi
 
@@ -165,7 +179,7 @@ fi
 python_cmd() {
     local env="$1"
     case "$_ENV_RUNNER" in
-        conda)      echo "conda run -n $env python" ;;
+        conda)      echo "$_CONDA_EXE run -n $env python" ;;
         micromamba) echo "micromamba run -n $env python" ;;
         *)          echo "python" ;;
     esac
@@ -175,7 +189,11 @@ XTTS2_PYTHON_CMD="$(python_cmd "$ENV_XTTS2")"
 
 if [ -n "$_ENV_RUNNER" ]; then
     log "Env runner : $_ENV_RUNNER"
+    log "Conda exe  : ${_CONDA_EXE:-<from PATH>}"
     log "XTTS2 env  : $ENV_XTTS2"
+    # Diagnostic: print the Python interpreter that will be used for synthesis.
+    _SYNTH_PYTHON="$($_CONDA_EXE run -n "$ENV_XTTS2" python -c 'import sys; print(sys.executable)' 2>/dev/null || true)"
+    [ -n "$_SYNTH_PYTHON" ] && log "Python exe : $_SYNTH_PYTHON"
 else
     warn "No working conda/micromamba env runner found for '$ENV_XTTS2'."
     warn "  Falling back to system python — ensure all deps are installed."

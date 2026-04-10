@@ -82,19 +82,22 @@ fi
 export PATH="$MINICONDA_DIR/bin:$PATH"
 # shellcheck source=/dev/null
 source "$MINICONDA_DIR/etc/profile.d/conda.sh"
+# Always use the explicit Miniconda binary to avoid PATH-dependent conda
+# ambiguity (Kaggle notebooks may have a system conda earlier on PATH).
+CONDA_EXE="$MINICONDA_DIR/bin/conda"
 
 # ── 3. Accept Anaconda channel Terms of Service (required in non-interactive environments) ──
 log "Step 2/5 Accepting Anaconda channel ToS…"
-conda tos accept --override-channels --channel https://repo.anaconda.com/pkgs/main >> "$SETUP_LOG" 2>&1 || true
-conda tos accept --override-channels --channel https://repo.anaconda.com/pkgs/r    >> "$SETUP_LOG" 2>&1 || true
+"$CONDA_EXE" tos accept --override-channels --channel https://repo.anaconda.com/pkgs/main >> "$SETUP_LOG" 2>&1 || true
+"$CONDA_EXE" tos accept --override-channels --channel https://repo.anaconda.com/pkgs/r    >> "$SETUP_LOG" 2>&1 || true
 
 # ── 4. Create XTTS2 conda environment ────────────────────────────────────────
 log "Step 3/5 Creating conda env '$ENV_XTTS2'…"
-if conda env list | grep -qE "^${ENV_XTTS2}[[:space:]]"; then
+if "$CONDA_EXE" env list | grep -qE "^${ENV_XTTS2}[[:space:]]"; then
     log_v "  Env '$ENV_XTTS2' already exists — skipping"
 else
     log "  Creating '$ENV_XTTS2' (Python ${PYTHON_VERSION})…"
-    run_q conda create -y -n "$ENV_XTTS2" python="$PYTHON_VERSION" || \
+    run_q "$CONDA_EXE" create -y -n "$ENV_XTTS2" python="$PYTHON_VERSION" || \
         die "Failed to create conda env '$ENV_XTTS2'"
 fi
 ok "Conda env ready: $ENV_XTTS2"
@@ -116,27 +119,38 @@ log "Step 4/5 Installing deps in '$ENV_XTTS2'…"
 REQS_XTTS2="$SCRIPT_DIR/requirements-xtts2.txt"
 [ -f "$REQS_XTTS2" ] || die "requirements-xtts2.txt not found at $REQS_XTTS2"
 
-run_q conda run -n "$ENV_XTTS2" pip install --quiet --upgrade pip setuptools wheel
+run_q "$CONDA_EXE" run -n "$ENV_XTTS2" pip install --quiet --upgrade pip setuptools wheel
 # setuptools + wheel ensure compiled extensions (e.g. numba, tokenizers) can be built from source if no wheel is available.
 
 log_v "  Stage A: installing torch==2.1.2 + torchaudio==2.1.2 (CUDA 12.1)…"
-run_q conda run -n "$ENV_XTTS2" pip install --quiet --no-cache-dir \
+run_q "$CONDA_EXE" run -n "$ENV_XTTS2" pip install --quiet --no-cache-dir \
     "torch==2.1.2" "torchaudio==2.1.2" \
     --index-url https://download.pytorch.org/whl/cu121 || \
     die "torch/torchaudio install failed in '$ENV_XTTS2'"
 
 log_v "  Stage B: installing XTTS2 deps from requirements-xtts2.txt…"
-run_q conda run -n "$ENV_XTTS2" pip install --quiet --no-cache-dir -r "$REQS_XTTS2" || \
+run_q "$CONDA_EXE" run -n "$ENV_XTTS2" pip install --quiet --no-cache-dir -r "$REQS_XTTS2" || \
     die "pip install (XTTS2 deps) failed in '$ENV_XTTS2'"
 
 # ── 5b. Register env as a Jupyter/Kaggle kernel (optional, non-fatal) ─────────
-run_q conda run -n "$ENV_XTTS2" python -m ipykernel install \
+run_q "$CONDA_EXE" run -n "$ENV_XTTS2" python -m ipykernel install \
     --user --name "$ENV_XTTS2" --display-name "Python ($ENV_XTTS2)" || true
 log_v "  Python dependencies installed in '$ENV_XTTS2'"
 
+# ── 5c. Verify pkg_resources is importable (setuptools sanity check) ──────────
+# pkg_resources is provided by setuptools; if it is missing the TTS import fails
+# at runtime even though TTS was installed successfully.  Re-run the upgrade to
+# self-heal any env where setuptools was inadvertently stripped.
+log_v "  Verifying pkg_resources is importable in '$ENV_XTTS2'…"
+if ! "$CONDA_EXE" run -n "$ENV_XTTS2" python -c "import pkg_resources" >> "$SETUP_LOG" 2>&1; then
+    log "  pkg_resources missing — reinstalling setuptools…"
+    run_q "$CONDA_EXE" run -n "$ENV_XTTS2" pip install --quiet --upgrade setuptools || \
+        die "setuptools reinstall failed in '$ENV_XTTS2'"
+fi
+
 # ── 6. Download XTTS2 model and create runtime directories ───────────────────
 log "Step 5/5 Preparing XTTS2 assets and runtime dirs…"
-run_q conda run -n "$ENV_XTTS2" \
+run_q "$CONDA_EXE" run -n "$ENV_XTTS2" \
     env HF_HOME="$HF_HOME" \
         TRANSFORMERS_CACHE="$TRANSFORMERS_CACHE" \
         TORCH_HOME="$TORCH_HOME" \
@@ -148,6 +162,7 @@ run_q conda run -n "$ENV_XTTS2" \
 mkdir -p "$SCRIPT_DIR/runtime/tmp"
 
 ok "Setup complete."
+log "  Conda exe      : $CONDA_EXE"
 log "  XTTS2 env      : $ENV_XTTS2"
 log "  Voice refs dir : voice refs/  (place .wav reference files here)"
 log "  Run 'bash host_service.sh' to start the API."
