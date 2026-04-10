@@ -8,6 +8,11 @@
 #   --text TEXT           Text to synthesize (default: built-in podcast sample)
 #   --output-dir DIR      Output directory   (default: /kaggle/working/voice_tests
 #                                             or ./output/voice_tests if not on Kaggle)
+#   --ckpt-name LABEL     StyleTTS2 checkpoint to use: ljspeech|libri
+#                         (default: ljspeech — the LJSpeech single-speaker model)
+#                         Run 'bash setup_kaggle.sh' (or download_models.sh) with
+#                         STYLETTS2_CHECKPOINTS="ljspeech,libri" to get both.
+#   --cpu                 Force CPU inference (default: auto-select GPU if available)
 #   --voice-model PATH    Path to RVC .pth model (skips RVC step if not provided)
 #   --voice-index PATH    Path to RVC .index file (optional; improves RVC quality)
 #   --config FILE         YAML config file listing multiple voices for batch conversion
@@ -32,13 +37,17 @@
 #   (unbuffered) so their output streams to the cell in real time.
 #
 # Required assets (before running):
-#   models/styletts2/epoch_2nd_00100.pth   — StyleTTS2 checkpoint
-#   models/styletts2/config.yml             — StyleTTS2 config
+#   models/styletts2/epoch_2nd_00100.pth   — StyleTTS2 LJSpeech checkpoint (ljspeech)
+#   models/styletts2/epoch_2nd_00020_libri.pth — StyleTTS2 LibriTTS checkpoint (libri)
+#   models/styletts2/config.yml             — LJSpeech config
+#   models/styletts2/config_libri.yml       — LibriTTS config
 #   models/StyleTTS2/                       — StyleTTS2 source tree
 #   models/rvc/<name>.pth                   — RVC model (for voice conversion)
 #   models/rvc/<name>.index                 — RVC index (optional)
 #
 # Run 'bash setup_kaggle.sh' to download all StyleTTS2 and RVC assets.
+# To download both LJSpeech and LibriTTS checkpoints:
+#   STYLETTS2_CHECKPOINTS="ljspeech,libri" bash setup_kaggle.sh
 
 set -euo pipefail
 
@@ -55,6 +64,8 @@ DEFAULT_OUTPUT_DIR="/kaggle/working/voice_tests"
 
 TEXT="Welcome to the Bulul podcast. Today we explore the intersection of technology and everyday life, with clear insights and practical takeaways for every listener."
 OUTPUT_DIR="$DEFAULT_OUTPUT_DIR"
+CKPT_NAME="ljspeech"
+USE_CPU=0
 VOICE_MODEL=""
 VOICE_INDEX=""
 CONFIG_FILE=""
@@ -93,6 +104,8 @@ while [[ $# -gt 0 ]]; do
     case "$1" in
         --text)         TEXT="$2";         shift 2 ;;
         --output-dir)   OUTPUT_DIR="$2";   shift 2 ;;
+        --ckpt-name)    CKPT_NAME="$2";    shift 2 ;;
+        --cpu)          USE_CPU=1;         shift   ;;
         --voice-model)  VOICE_MODEL="$2";  shift 2 ;;
         --voice-index)  VOICE_INDEX="$2";  shift 2 ;;
         --config)       CONFIG_FILE="$2";  shift 2 ;;
@@ -250,25 +263,41 @@ if [ -n "$CONFIG_FILE" ]; then
 fi
 
 log "===== Bulul voice test ====="
-log "Output dir : $OUTPUT_DIR"
+log "Output dir  : $OUTPUT_DIR"
+log "Checkpoint  : $CKPT_NAME (${CKPT})"
+log "Device      : $([ "$USE_CPU" -eq 1 ] && echo 'cpu (--cpu)' || echo 'auto (GPU if available)')"
 if [ "${#TEXT}" -gt 60 ]; then
-    log "Text       : ${TEXT:0:60}…"
+    log "Text        : ${TEXT:0:60}…"
 else
-    log "Text       : $TEXT"
+    log "Text        : $TEXT"
 fi
 if [ -n "$CONFIG_FILE" ] && [ "${#CONFIG_MODELS[@]}" -gt 0 ]; then
-    log "Voices     : ${#CONFIG_MODELS[@]} (from config)"
+    log "Voices      : ${#CONFIG_MODELS[@]} (from config)"
 elif [ -n "$VOICE_MODEL" ]; then
-    log "Voice model: $VOICE_MODEL"
+    log "Voice model : $VOICE_MODEL"
 else
-    log "Voice model: (none — StyleTTS2 only)"
+    log "Voice model : (none — StyleTTS2 only)"
 fi
 log "==========================="
 
 # ── Step 1: Validate required StyleTTS2 assets ───────────────────────────────
-log "1/3 Validating StyleTTS2 assets…"
-CKPT="$REPO_ROOT/models/styletts2/epoch_2nd_00100.pth"
-CFG="$REPO_ROOT/models/styletts2/config.yml"
+log "1/3 Validating StyleTTS2 assets (checkpoint: $CKPT_NAME)…"
+
+# Map checkpoint label to file paths
+case "$CKPT_NAME" in
+    ljspeech)
+        CKPT="$REPO_ROOT/models/styletts2/epoch_2nd_00100.pth"
+        CFG="$REPO_ROOT/models/styletts2/config.yml"
+        ;;
+    libri)
+        CKPT="$REPO_ROOT/models/styletts2/epoch_2nd_00020_libri.pth"
+        CFG="$REPO_ROOT/models/styletts2/config_libri.yml"
+        ;;
+    *)
+        die "Unknown --ckpt-name '$CKPT_NAME'. Valid values: ljspeech, libri"
+        ;;
+esac
+
 STYLETTS2_SRC="$REPO_ROOT/models/StyleTTS2"
 
 ASSETS_OK=1
@@ -277,13 +306,20 @@ ASSETS_OK=1
 [ -d "$STYLETTS2_SRC" ] || { warn "Missing StyleTTS2 source: $STYLETTS2_SRC"; ASSETS_OK=0; }
 
 if [ "$ASSETS_OK" -eq 0 ]; then
-    die "Required assets missing. Run 'bash setup_kaggle.sh' to download them."
+    die "Required assets missing. Run 'bash setup_kaggle.sh' to download them. For the 'libri' checkpoint run: STYLETTS2_CHECKPOINTS=\"ljspeech,libri\" bash setup_kaggle.sh"
 fi
 ok "Assets validated"
 
 # ── Step 2: StyleTTS2 synthesis ───────────────────────────────────────────────
 TTS_OUTPUT="$OUTPUT_DIR/base_styletts2.wav"
-log "2/3 Synthesising with StyleTTS2 (max ${TIMEOUT_TTS}s)…"
+
+# Build synthesize.py extra args
+TTS_EXTRA_ARGS=()
+[ "$USE_CPU" -eq 1 ] && TTS_EXTRA_ARGS+=("--cpu")
+
+_device_note=""
+[ "$USE_CPU" -eq 1 ] && _device_note=", CPU mode"
+log "2/3 Synthesising with StyleTTS2/$CKPT_NAME (max ${TIMEOUT_TTS}s${_device_note})…"
 
 heartbeat_start
 
@@ -294,6 +330,7 @@ timeout "$TIMEOUT_TTS" \
         --output "$TTS_OUTPUT" \
         --ckpt   "$CKPT" \
         --config "$CFG" \
+        "${TTS_EXTRA_ARGS[@]}" \
     >> "$TEST_LOG" 2>&1 || TTS_EXIT=$?
 
 heartbeat_stop

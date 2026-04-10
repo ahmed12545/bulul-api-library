@@ -26,13 +26,43 @@ This will:
 - Install the **`styletts2` pip package** (provides the `styletts2.tts.StyleTTS2` inference API used by `scripts/synthesize.py`) and `einops_exts`
 - Clone the StyleTTS2 source tree into `models/StyleTTS2/`
 - Install StyleTTS2's runtime dependencies in `bulul-styletts2`
-- Download the StyleTTS2 model weights into `models/styletts2/`
+- Download **multiple StyleTTS2 voice checkpoints** into `models/styletts2/` (see below)
 - Clone the RVC source into `models/RVC/`
 - Install RVC's runtime dependencies in `bulul-rvc` (with `pip<24.1` pinning to fix the `fairseq/omegaconf` metadata conflict)
 - Create `models/rvc/` for user-supplied RVC voice checkpoints
 - Set up `HF_HOME`, `TRANSFORMERS_CACHE`, and `TORCH_HOME` cache directories under `/kaggle/working/.cache/`
 
 > **Note:** The script is idempotent — re-running it safely skips already-complete steps.
+
+#### Selecting which StyleTTS2 checkpoints to download
+
+By default `setup_kaggle.sh` downloads **both** available voice checkpoints (LJSpeech and LibriTTS).
+You can control this with `--checkpoints` (or the `STYLETTS2_CHECKPOINTS` env var):
+
+| Label | Model | Description |
+|---|---|---|
+| `ljspeech` | StyleTTS2-LJSpeech | Single-speaker, female American English |
+| `libri` | StyleTTS2-LibriTTS | Multi-speaker, various accents |
+
+```bash
+# Default: install both checkpoints (recommended)
+bash setup_kaggle.sh
+
+# Install only the LJSpeech checkpoint (faster, less storage)
+bash setup_kaggle.sh --checkpoints ljspeech
+
+# Install both explicitly
+bash setup_kaggle.sh --checkpoints "ljspeech,libri"
+
+# Using the env var instead
+STYLETTS2_CHECKPOINTS="ljspeech,libri" bash setup_kaggle.sh
+```
+
+Up to **5** checkpoints can be installed simultaneously (the catalog currently has 2 official ones).
+
+> **Note:** `ASR` utility weights (e.g. `epoch_00080.pth` inside `models/StyleTTS2/Utils/ASR/`) are
+> **not** TTS voice checkpoints — they are internal synthesis helpers downloaded automatically by
+> the `styletts2` pip package.  Only the files in `models/styletts2/` are selectable voice weights.
 
 #### Output mode
 
@@ -100,8 +130,10 @@ run_streaming(f"cd {REPO_DIR} && bash setup_kaggle.sh")
 
 print("\n✅ Setup complete.")
 print("  • Envs: bulul-styletts2 (TTS/API), bulul-rvc (voice conversion)")
+print("  • Checkpoints installed: ljspeech (LJSpeech), libri (LibriTTS)")
 print("  • Run 'bash host_service.sh' to start the API.")
 print("  • Run 'bash tests/test.sh --help' for voice generation options.")
+print("  • A/B test checkpoints: bash tests/test.sh --ckpt-name libri --no-rvc")
 ```
 
 ### Step 4 — Call the endpoint
@@ -205,8 +237,10 @@ Each environment is created and managed by `setup_kaggle.sh`. They are
 
 | Asset | Path | How to obtain |
 |---|---|---|
-| StyleTTS2 checkpoint | `models/styletts2/epoch_2nd_00100.pth` | Downloaded by `bash setup_kaggle.sh` |
-| StyleTTS2 config | `models/styletts2/config.yml` | Downloaded by `bash setup_kaggle.sh` |
+| StyleTTS2 checkpoint (LJSpeech) | `models/styletts2/epoch_2nd_00100.pth` | Downloaded by `bash setup_kaggle.sh` |
+| StyleTTS2 checkpoint (LibriTTS) | `models/styletts2/epoch_2nd_00020_libri.pth` | Downloaded by `bash setup_kaggle.sh` |
+| StyleTTS2 config (LJSpeech) | `models/styletts2/config.yml` | Downloaded by `bash setup_kaggle.sh` |
+| StyleTTS2 config (LibriTTS) | `models/styletts2/config_libri.yml` | Downloaded by `bash setup_kaggle.sh` |
 | StyleTTS2 source | `models/StyleTTS2/` | Cloned by `bash setup_kaggle.sh` |
 | RVC source | `models/RVC/` | Cloned by `bash setup_kaggle.sh` |
 | RVC voice model | `models/rvc/<name>.pth` | **You supply** — see below |
@@ -228,9 +262,23 @@ models/rvc/
 
 ```bash
 # Step 1 — Synthesise with StyleTTS2 (in bulul-styletts2 env)
+# Default checkpoint (LJSpeech)
 conda run -n bulul-styletts2 python -u scripts/synthesize.py \
     --text "Welcome to the podcast." \
     --output /tmp/base.wav
+
+# Using the LibriTTS multi-speaker checkpoint
+conda run -n bulul-styletts2 python -u scripts/synthesize.py \
+    --text "Welcome to the podcast." \
+    --output /tmp/base_libri.wav \
+    --ckpt  models/styletts2/epoch_2nd_00020_libri.pth \
+    --config models/styletts2/config_libri.yml
+
+# Force CPU inference (no GPU required)
+conda run -n bulul-styletts2 python -u scripts/synthesize.py \
+    --text "Welcome to the podcast." \
+    --output /tmp/base_cpu.wav \
+    --cpu
 
 # Step 2 — Convert voice with RVC (in bulul-rvc env)
 conda run -n bulul-rvc python -u scripts/rvc_convert.py \
@@ -249,8 +297,14 @@ conda run -n bulul-rvc python -u scripts/rvc_convert.py \
 #### Default (quiet) mode — ≤ 15 lines of output
 
 ```bash
-# StyleTTS2 only (no RVC model required)
+# StyleTTS2 only (no RVC model required) — uses LJSpeech checkpoint by default
 bash tests/test.sh --text "Hello, this is a test."
+
+# Use the LibriTTS multi-speaker checkpoint instead
+bash tests/test.sh --text "Hello, this is a test." --ckpt-name libri
+
+# Force CPU inference (no GPU required)
+bash tests/test.sh --text "Hello, this is a test." --cpu --no-rvc
 
 # Full pipeline (StyleTTS2 → single RVC voice)
 bash tests/test.sh \

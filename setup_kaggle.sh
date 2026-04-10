@@ -2,11 +2,16 @@
 # setup_kaggle.sh — one-shot setup for Kaggle demo (side-by-side conda envs)
 #
 # Usage:
-#   bash setup_kaggle.sh [--verbose]
+#   bash setup_kaggle.sh [--verbose] [--checkpoints LABELS]
 #
 # Options:
-#   --verbose   Show full subprocess output instead of summary-only mode.
-#               Default: quiet mode (logs written to runtime/logs/setup.log).
+#   --verbose              Show full subprocess output instead of summary-only mode.
+#                          Default: quiet mode (logs written to runtime/logs/setup.log).
+#   --checkpoints LABELS   Comma-separated list of StyleTTS2 checkpoint labels to
+#                          download (default: "ljspeech,libri"; max 5).
+#                          Valid labels: ljspeech, libri
+#                          Example: --checkpoints ljspeech
+#                                   --checkpoints "ljspeech,libri"
 #
 # Creates two isolated conda environments:
 #   bulul-styletts2  — StyleTTS2 TTS synthesis + API server
@@ -17,8 +22,14 @@ set -euo pipefail
 
 # ── Defaults ──────────────────────────────────────────────────────────────────
 VERBOSE=0
-for _arg in "$@"; do
-    case "$_arg" in --verbose|-v) VERBOSE=1 ;; esac
+STYLETTS2_CHECKPOINTS="${STYLETTS2_CHECKPOINTS:-ljspeech,libri}"
+
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --verbose|-v)     VERBOSE=1; shift ;;
+        --checkpoints)    STYLETTS2_CHECKPOINTS="$2"; shift 2 ;;
+        *)                echo "[setup] Unknown argument: $1" >&2; exit 1 ;;
+    esac
 done
 
 ENV_STYLETTS2="bulul-styletts2"
@@ -128,7 +139,7 @@ log_v "  HF_HOME=$HF_HOME  TORCH_HOME=$TORCH_HOME"
 # ── 7. Download models (StyleTTS2 in bulul-styletts2, RVC in bulul-rvc) ───────
 # Pass both env names into download_models.sh so it can install each model's
 # deps into the correct side-by-side environment.
-log "Step 6/8 Downloading models…"
+log "Step 6/8 Downloading models (checkpoints: $STYLETTS2_CHECKPOINTS)…"
 run_q conda run -n "$ENV_STYLETTS2" \
     env HF_HOME="$HF_HOME" \
         TRANSFORMERS_CACHE="$TRANSFORMERS_CACHE" \
@@ -136,6 +147,7 @@ run_q conda run -n "$ENV_STYLETTS2" \
         BULUL_ENV_RVC="$ENV_RVC" \
         BULUL_VERBOSE="$VERBOSE" \
         MINICONDA_DIR="$MINICONDA_DIR" \
+        STYLETTS2_CHECKPOINTS="$STYLETTS2_CHECKPOINTS" \
     bash "$SCRIPT_DIR/download_models.sh" || \
     die "Model download failed"
 
@@ -144,8 +156,9 @@ log "Step 7/8 Creating runtime directories…"
 mkdir -p "$SCRIPT_DIR/runtime/tmp"
 
 ok "Setup complete."
-log "  StyleTTS2 env : $ENV_STYLETTS2"
-log "  RVC env       : $ENV_RVC"
+log "  StyleTTS2 env  : $ENV_STYLETTS2"
+log "  RVC env        : $ENV_RVC"
+log "  Checkpoints    : $STYLETTS2_CHECKPOINTS (in models/styletts2/)"
 log "  Run 'bash host_service.sh' to start the API."
 log "  Run 'bash tests/test.sh --help' for voice test options."
 log "  NOTE: First model load may take several minutes while weights load into memory."
