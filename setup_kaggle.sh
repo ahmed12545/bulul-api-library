@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# setup_kaggle.sh — one-shot XTTS2 setup for Kaggle / headless environments
+# setup_kaggle.sh — one-shot StyleTTS2 setup for Kaggle / headless environments
 #
 # Usage:
 #   bash setup_kaggle.sh [--verbose]
@@ -9,9 +9,11 @@
 #               Default: quiet mode (logs written to runtime/logs/setup.log).
 #
 # Creates one conda environment:
-#   bulul-xtts2  — XTTS2 voice synthesis + API server
+#   bulul-styletts2  — StyleTTS2 voice synthesis + API server
 #
 # Re-running is safe (idempotent): already-complete steps are skipped.
+#
+# Migration note: XTTS2 removed by user request. RVC removed.
 set -euo pipefail
 
 # ── Defaults ──────────────────────────────────────────────────────────────────
@@ -24,7 +26,7 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-ENV_XTTS2="bulul-xtts2"
+ENV_STYLETTS2="bulul-styletts2"
 PYTHON_VERSION="3.10"
 MINICONDA_DIR="$HOME/miniconda3"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -64,8 +66,19 @@ mkdir -p "$LOG_DIR"
 log_v "Log file: $SETUP_LOG"
 log_v "Verbose mode enabled."
 
-# ── 1. Install Miniconda if not present ──────────────────────────────────────
-log "Step 1/5 Checking Miniconda…"
+# ── 1. Install system dependency: espeak-ng (required by phonemizer) ──────────
+log "Step 1/6 Installing espeak-ng (phonemizer system dependency)…"
+if command -v espeak-ng >/dev/null 2>&1; then
+    log_v "  espeak-ng already installed — skipping"
+else
+    log "  Installing espeak-ng via apt-get…"
+    run_q apt-get install -y -q espeak-ng libespeak-ng-dev || \
+        warn "apt-get install espeak-ng FAILED — phonemizer REQUIRES espeak-ng. Synthesis will fail without it. Install manually: sudo apt-get install -y espeak-ng libespeak-ng-dev"
+fi
+ok "espeak-ng ready"
+
+# ── 2. Install Miniconda if not present ──────────────────────────────────────
+log "Step 2/6 Checking Miniconda…"
 if [ ! -d "$MINICONDA_DIR" ]; then
     log "  Miniconda not found — downloading installer…"
     INSTALLER="/tmp/miniconda_installer.sh"
@@ -78,7 +91,7 @@ else
     log_v "  Miniconda present at $MINICONDA_DIR — skipping"
 fi
 
-# ── 2. Initialise conda for the current shell ─────────────────────────────────
+# ── 3. Initialise conda for the current shell ─────────────────────────────────
 export PATH="$MINICONDA_DIR/bin:$PATH"
 # shellcheck source=/dev/null
 source "$MINICONDA_DIR/etc/profile.d/conda.sh"
@@ -86,101 +99,78 @@ source "$MINICONDA_DIR/etc/profile.d/conda.sh"
 # ambiguity (Kaggle notebooks may have a system conda earlier on PATH).
 CONDA_EXE="$MINICONDA_DIR/bin/conda"
 
-# ── 3. Accept Anaconda channel Terms of Service (required in non-interactive environments) ──
-log "Step 2/5 Accepting Anaconda channel ToS…"
+# ── 4. Accept Anaconda channel Terms of Service (required in non-interactive environments) ──
+log "Step 3/6 Accepting Anaconda channel ToS…"
 "$CONDA_EXE" tos accept --override-channels --channel https://repo.anaconda.com/pkgs/main >> "$SETUP_LOG" 2>&1 || true
 "$CONDA_EXE" tos accept --override-channels --channel https://repo.anaconda.com/pkgs/r    >> "$SETUP_LOG" 2>&1 || true
 
-# ── 4. Create XTTS2 conda environment ────────────────────────────────────────
-log "Step 3/5 Creating conda env '$ENV_XTTS2'…"
-if "$CONDA_EXE" env list | grep -qE "^${ENV_XTTS2}[[:space:]]"; then
-    log_v "  Env '$ENV_XTTS2' already exists — skipping"
+# ── 5. Create StyleTTS2 conda environment ─────────────────────────────────────
+log "Step 4/6 Creating conda env '$ENV_STYLETTS2'…"
+if "$CONDA_EXE" env list | grep -qE "^${ENV_STYLETTS2}[[:space:]]"; then
+    log_v "  Env '$ENV_STYLETTS2' already exists — skipping"
 else
-    log "  Creating '$ENV_XTTS2' (Python ${PYTHON_VERSION})…"
-    run_q "$CONDA_EXE" create -y -n "$ENV_XTTS2" python="$PYTHON_VERSION" || \
-        die "Failed to create conda env '$ENV_XTTS2'"
+    log "  Creating '$ENV_STYLETTS2' (Python ${PYTHON_VERSION})…"
+    run_q "$CONDA_EXE" create -y -n "$ENV_STYLETTS2" python="$PYTHON_VERSION" || \
+        die "Failed to create conda env '$ENV_STYLETTS2'"
 fi
-ok "Conda env ready: $ENV_XTTS2"
+ok "Conda env ready: $ENV_STYLETTS2"
 
-# ── 5. Install Python dependencies ────────────────────────────────────────────
+# ── 6. Install Python dependencies ────────────────────────────────────────────
 # Install in two stages to avoid pip resolver conflicts.
 #
-# Stage A: PyTorch + torchaudio from the CUDA 12.1 wheel index.
-#   Must come first so the resolver sees the correct torch version before TTS
-#   is evaluated.  The CUDA index URL is not PyPI — torch cannot be installed
-#   from requirements-xtts2.txt directly.
+# Stage A: pip / setuptools / wheel bootstrap.
+# Stage B: PyTorch + torchaudio from the CUDA 12.1 wheel index.
+#   Must come first so the resolver sees the correct torch version before
+#   styletts2 is evaluated.
 #
-# Stage B: XTTS2-only deps from requirements-xtts2.txt (TTS, transformers, …).
-#   numpy, scipy, librosa, soundfile are intentionally absent from that file.
-#   TTS==0.22.0 pulls in compatible versions automatically.  Pinning
-#   numpy==1.26.4 alongside TTS in a single pip pass caused a
-#   ResolutionImpossible conflict via TTS's transitive trainer dependency.
-log "Step 4/5 Installing deps in '$ENV_XTTS2'…"
-REQS_XTTS2="$SCRIPT_DIR/requirements-xtts2.txt"
-[ -f "$REQS_XTTS2" ] || die "requirements-xtts2.txt not found at $REQS_XTTS2"
+# Stage C: StyleTTS2 deps from requirements-styletts2.txt (styletts2, phonemizer, …).
+log "Step 5/6 Installing deps in '$ENV_STYLETTS2'…"
+REQS_STYLETTS2="$SCRIPT_DIR/requirements-styletts2.txt"
+[ -f "$REQS_STYLETTS2" ] || die "requirements-styletts2.txt not found at $REQS_STYLETTS2"
 
-run_q "$CONDA_EXE" run -n "$ENV_XTTS2" pip install --quiet --upgrade pip setuptools wheel
-# setuptools + wheel ensure compiled extensions (e.g. numba, tokenizers) can be built from source if no wheel is available.
+log_v "  Stage A: upgrading pip / setuptools / wheel…"
+run_q "$CONDA_EXE" run -n "$ENV_STYLETTS2" pip install --quiet --upgrade pip setuptools wheel
 
-log_v "  Stage A: installing torch==2.1.2 + torchaudio==2.1.2 (CUDA 12.1)…"
-run_q "$CONDA_EXE" run -n "$ENV_XTTS2" pip install --quiet --no-cache-dir \
+log_v "  Stage B: installing torch==2.1.2 + torchaudio==2.1.2 (CUDA 12.1)…"
+run_q "$CONDA_EXE" run -n "$ENV_STYLETTS2" pip install --quiet --no-cache-dir \
     "torch==2.1.2" "torchaudio==2.1.2" \
     --index-url https://download.pytorch.org/whl/cu121 || \
-    die "torch/torchaudio install failed in '$ENV_XTTS2'"
+    die "torch/torchaudio install failed in '$ENV_STYLETTS2'"
 
-log_v "  Stage B: installing XTTS2 deps from requirements-xtts2.txt…"
-run_q "$CONDA_EXE" run -n "$ENV_XTTS2" pip install --quiet --no-cache-dir -r "$REQS_XTTS2" || \
-    die "pip install (XTTS2 deps) failed in '$ENV_XTTS2'"
+log_v "  Stage C: installing StyleTTS2 deps from requirements-styletts2.txt…"
+run_q "$CONDA_EXE" run -n "$ENV_STYLETTS2" pip install --quiet --no-cache-dir \
+    -r "$REQS_STYLETTS2" || \
+    die "pip install (StyleTTS2 deps) failed in '$ENV_STYLETTS2'"
 
-# ── 5b. Register env as a Jupyter/Kaggle kernel (optional, non-fatal) ─────────
-run_q "$CONDA_EXE" run -n "$ENV_XTTS2" python -m ipykernel install \
-    --user --name "$ENV_XTTS2" --display-name "Python ($ENV_XTTS2)" || true
-log_v "  Python dependencies installed in '$ENV_XTTS2'"
+# ── 6b. Register env as a Jupyter/Kaggle kernel (optional, non-fatal) ─────────
+run_q "$CONDA_EXE" run -n "$ENV_STYLETTS2" python -m ipykernel install \
+    --user --name "$ENV_STYLETTS2" --display-name "Python ($ENV_STYLETTS2)" || true
+log_v "  Python dependencies installed in '$ENV_STYLETTS2'"
 
-# ── 5c. Verify pkg_resources is importable (setuptools sanity check) ──────────
-# pkg_resources is provided by setuptools; if it is missing the TTS import fails
-# at runtime even though TTS was installed successfully.  Re-run the upgrade to
-# self-heal any env where setuptools was inadvertently stripped.
-log_v "  Verifying pkg_resources is importable in '$ENV_XTTS2'…"
-if ! "$CONDA_EXE" run -n "$ENV_XTTS2" python -c "import pkg_resources" >> "$SETUP_LOG" 2>&1; then
-    log "  pkg_resources missing — reinstalling setuptools…"
-    run_q "$CONDA_EXE" run -n "$ENV_XTTS2" pip install --quiet --upgrade setuptools || \
-        die "setuptools reinstall failed in '$ENV_XTTS2'"
+# ── 6c. Hard fail-fast verification: styletts2 must be importable ─────────────
+log_v "  Hard-verifying styletts2 is importable in '$ENV_STYLETTS2'…"
+if ! "$CONDA_EXE" run -n "$ENV_STYLETTS2" \
+        python -c "from styletts2 import tts; print('ok')" >> "$SETUP_LOG" 2>&1; then
+    die "styletts2 not importable in '$ENV_STYLETTS2' after install — check $SETUP_LOG"
 fi
+ok "styletts2 verified in '$ENV_STYLETTS2'"
 
-# ── 5d. Re-upgrade setuptools after TTS install ───────────────────────────────
-# TTS==0.22.0 dependency resolution can silently overwrite the setuptools version
-# pinned in stage A, removing pkg_resources from the env.  A second unconditional
-# upgrade after TTS is installed is the only reliable guard against this.
-log_v "  Re-upgrading setuptools after TTS install (belt-and-suspenders)…"
-run_q "$CONDA_EXE" run -n "$ENV_XTTS2" pip install --quiet --upgrade setuptools wheel || \
-    die "setuptools post-TTS re-upgrade failed in '$ENV_XTTS2'"
-
-# ── 5e. Hard fail-fast verification: pkg_resources + TTS must both be importable
-log_v "  Hard-verifying pkg_resources + TTS are importable in '$ENV_XTTS2'…"
-if ! "$CONDA_EXE" run -n "$ENV_XTTS2" \
-        python -c "import pkg_resources, TTS; print('ok')" >> "$SETUP_LOG" 2>&1; then
-    die "pkg_resources or TTS not importable in '$ENV_XTTS2' after install — check $SETUP_LOG"
-fi
-ok "pkg_resources + TTS verified in '$ENV_XTTS2'"
-
-# ── 6. Download XTTS2 model and create runtime directories ───────────────────
-log "Step 5/5 Preparing XTTS2 assets and runtime dirs…"
-run_q "$CONDA_EXE" run -n "$ENV_XTTS2" \
+# ── 7. Download StyleTTS2 model and create runtime directories ────────────────
+log "Step 6/6 Preparing StyleTTS2 assets and runtime dirs…"
+run_q "$CONDA_EXE" run -n "$ENV_STYLETTS2" \
     env HF_HOME="$HF_HOME" \
         TRANSFORMERS_CACHE="$TRANSFORMERS_CACHE" \
         TORCH_HOME="$TORCH_HOME" \
         BULUL_VERBOSE="$VERBOSE" \
-        COQUI_TOS_AGREED=1 \
     bash "$SCRIPT_DIR/download_models.sh" || \
     die "Asset preparation failed"
 
 mkdir -p "$SCRIPT_DIR/runtime/tmp"
 
 ok "Setup complete."
-log "  Conda exe      : $CONDA_EXE"
-log "  XTTS2 env      : $ENV_XTTS2"
-log "  Voice refs dir : voice refs/  (place .wav reference files here)"
+log "  Conda exe        : $CONDA_EXE"
+log "  StyleTTS2 env    : $ENV_STYLETTS2"
+log "  Voice refs dir   : voice refs/  (place .wav reference files here)"
 log "  Run 'bash host_service.sh' to start the API."
 log "  Run 'bash tests/test.sh --help' for voice synthesis options."
-log "  NOTE: First synthesis may take several minutes while XTTS2 loads."
+log "  NOTE: First synthesis downloads the StyleTTS2 model weights (~0.5 GB)."

@@ -2,11 +2,11 @@
 """
 scripts/rvc_convert.py — REMOVED (legacy stub).
 
-This script has been removed as part of the migration to XTTS2-only.
-RVC voice conversion is no longer supported.
+RVC voice conversion has been removed from this project.
+XTTS2 has also been removed.
 
-This project now uses XTTS2 for zero-shot voice cloning directly from
-reference WAV files.  See 'voice refs/README.md' for instructions.
+This project now uses StyleTTS2 for voice synthesis and cloning.
+See 'voice refs/README.md' and README.md for instructions.
 
 If you run this script, it will exit with a clear error message.
 """
@@ -22,10 +22,12 @@ def log(msg: str) -> None:
 
 def main() -> None:
     log("ERROR: scripts/rvc_convert.py is no longer available.")
-    log("  This project has migrated to XTTS2-only voice synthesis.")
-    log("  RVC voice conversion has been removed.")
+    log("  RVC voice conversion has been removed from this project.")
+    log("  XTTS2 has also been removed by user request.")
     log("")
-    log("  New workflow — voice cloning with XTTS2:")
+    log("  This project now uses StyleTTS2 for voice synthesis.")
+    log("")
+    log("  New workflow — voice synthesis/cloning with StyleTTS2:")
     log("    1. Place a reference WAV in the 'voice refs/' folder.")
     log("    2. Run synthesis:")
     log("         python scripts/synthesize.py \\")

@@ -51,30 +51,30 @@ check_contains "$S" "download_models.sh" "calls download_models.sh"
 check_contains "$S" "HF_HOME" "sets HF_HOME cache var"
 check_contains "$S" "TORCH_HOME" "sets TORCH_HOME cache var"
 check_contains "$S" "set -euo pipefail" "fail-fast enabled"
-check_contains "$S" "bulul-xtts2" "creates bulul-xtts2 env"
+check_contains "$S" "bulul-styletts2" "creates bulul-styletts2 env"
 check_contains "$S" "\-\-verbose" "supports --verbose flag"
-check_contains "$S" "import pkg_resources.*TTS" "hard-verifies pkg_resources + TTS after install"
+check_contains "$S" "styletts2" "installs styletts2 package"
+check_contains "$S" "espeak" "installs espeak-ng system dependency"
 check_absent   "$S" "bulul-rvc" "bulul-rvc env removed"
-check_absent   "$S" "bulul-styletts2" "bulul-styletts2 env removed"
-check_absent   "$S" "StyleTTS2" "StyleTTS2 references removed"
-check_absent   "$S" "STYLETTS2_CHECKPOINTS" "STYLETTS2_CHECKPOINTS removed"
+check_absent   "$S" "bulul-xtts2" "bulul-xtts2 env removed"
+check_absent   "$S" "TTS==0.22.0" "XTTS2 TTS package removed"
 
 # ── download_models.sh ────────────────────────────────────────────────────────
 S="$REPO_ROOT/download_models.sh"
 check_syntax "$S"
 check_contains "$S" "voice refs" "creates voice refs directory"
-check_contains "$S" "XTTS2" "references XTTS2"
+check_contains "$S" "StyleTTS2" "references StyleTTS2"
 check_contains "$S" "HF_HOME" "sets HF_HOME cache var"
 check_contains "$S" "TORCH_HOME" "sets TORCH_HOME cache var"
 check_contains "$S" "set -euo pipefail" "fail-fast enabled"
 check_absent   "$S" "git clone" "no model source tree cloning"
-check_absent   "$S" "StyleTTS2" "StyleTTS2 references removed"
+check_absent   "$S" "XTTS2" "XTTS2 references removed"
 check_absent   "$S" "bulul-rvc" "RVC env references removed"
 
 # ── tests/test.sh ─────────────────────────────────────────────────────────────
 S="$REPO_ROOT/tests/test.sh"
 check_syntax "$S"
-check_contains "$S" "synthesize.py" "calls XTTS2 synthesize script"
+check_contains "$S" "synthesize.py" "calls StyleTTS2 synthesize script"
 check_contains "$S" "heartbeat" "implements heartbeat for Kaggle anti-hang"
 check_contains "$S" "timeout" "uses timeout guard for long steps"
 check_contains "$S" "\-\-text" "accepts --text argument"
@@ -82,13 +82,13 @@ check_contains "$S" "\-\-output-dir" "accepts --output-dir argument"
 check_contains "$S" "\-\-ref-wav" "accepts --ref-wav argument"
 check_contains "$S" "\-\-verbose" "accepts --verbose flag"
 check_contains "$S" "set -euo pipefail" "fail-fast enabled"
-check_contains "$S" "bulul-xtts2" "uses bulul-xtts2 env"
+check_contains "$S" "bulul-styletts2" "uses bulul-styletts2 env"
 check_contains "$S" "voice refs" "references voice refs folder"
 check_contains "$S" "Legacy flag" "rejects legacy flags with clear message"
-check_contains "$S" "import pkg_resources.*TTS" "preflight checks pkg_resources + TTS before synthesis"
+check_contains "$S" "styletts2" "preflight checks styletts2 importable"
 check_absent   "$S" "rvc_convert.py" "rvc_convert.py not called"
 check_absent   "$S" "bulul-rvc" "bulul-rvc env not referenced"
-check_absent   "$S" "bulul-styletts2" "bulul-styletts2 env not referenced"
+check_absent   "$S" "bulul-xtts2" "bulul-xtts2 env not referenced"
 
 # ── tests/podcast_6voices.yaml ────────────────────────────────────────────────
 S="$REPO_ROOT/tests/podcast_6voices.yaml"
@@ -100,9 +100,9 @@ if [ -f "$S" ]; then
         fail "missing voices list — $S"
     fi
     if grep -q "ref_wav:" "$S"; then
-        ok "contains ref_wav entries (XTTS2 format) — $S"
+        ok "contains ref_wav entries (voice cloning format) — $S"
     else
-        fail "missing ref_wav entries (XTTS2 format) — $S"
+        fail "missing ref_wav entries (voice cloning format) — $S"
     fi
 else
     fail "missing file — $S"
@@ -117,11 +117,13 @@ if [ -f "$S" ]; then
         fail "syntax error — $S"
     fi
     check_contains "$S" "flush=True" "uses flush=True for unbuffered output"
-    check_contains "$S" "XTTS2" "references XTTS2"
+    check_contains "$S" "StyleTTS2|styletts2" "references StyleTTS2"
     check_contains "$S" "argparse" "uses argparse for argument handling"
     check_contains "$S" "ref-wav|ref_wav" "accepts reference WAV argument"
     check_contains "$S" "Legacy flag|_LEGACY_FLAGS|legacy" "rejects legacy flags"
-    check_contains "$S" "import pkg_resources" "pre-checks pkg_resources availability"
+    check_contains "$S" "diffusion.steps|diffusion_steps" "accepts diffusion-steps argument"
+    check_absent   "$S" "from TTS.api|from TTS import" "XTTS2 TTS package import removed"
+    check_absent   "$S" "import pkg_resources" "pkg_resources check removed (not needed for styletts2)"
 else
     fail "missing file — $S"
 fi
@@ -135,7 +137,7 @@ if [ -f "$S" ]; then
         fail "syntax error — $S"
     fi
     check_contains "$S" "flush=True" "uses flush=True for unbuffered output"
-    check_contains "$S" "argparse|XTTS2|removed|legacy" "references migration message"
+    check_contains "$S" "XTTS2|StyleTTS2|removed|legacy" "references migration message"
     check_contains "$S" "sys.exit" "exits with error (legacy stub)"
 else
     fail "missing file — $S"
@@ -151,9 +153,9 @@ check_contains "$S" "TORCH_HOME" "exports TORCH_HOME cache var"
 check_contains "$S" "uvicorn" "starts uvicorn"
 check_contains "$S" "ngrok" "starts ngrok"
 check_contains "$S" "set -euo pipefail" "fail-fast enabled"
-check_contains "$S" "bulul-xtts2" "uses bulul-xtts2 env for API"
-check_absent   "$S" "bulul-styletts2" "bulul-styletts2 env removed"
-check_absent   "$S" "PYTHONPATH.*StyleTTS2" "StyleTTS2 PYTHONPATH removed"
+check_contains "$S" "bulul-styletts2" "uses bulul-styletts2 env for API"
+check_absent   "$S" "bulul-xtts2" "bulul-xtts2 env removed"
+check_absent   "$S" "PYTHONPATH.*StyleTTS2" "no PYTHONPATH hack needed (styletts2 is pip-installed)"
 
 # ── voice refs/ directory ─────────────────────────────────────────────────────
 VREF="$REPO_ROOT/voice refs"
