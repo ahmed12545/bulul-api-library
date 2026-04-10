@@ -37,8 +37,9 @@ This will:
 - Accept Anaconda channel Terms of Service (required in non-interactive environments)
 - Create one conda environment: **`bulul-styletts2`** (Python 3.10)
 - Install PyTorch **2.1.2** + torchaudio **2.1.2** from the CUDA 12.1 wheel index (stage B)
-- Install StyleTTS2-only dependencies from `requirements-styletts2.txt` (stage C):
-  - `styletts2`, `phonemizer`, `librosa`, `soundfile`, `scipy`, `numpy`, `transformers`, `huggingface_hub`
+- Install StyleTTS2 runtime dependencies from `requirements-styletts2.txt` (stage C):
+  - `phonemizer`, `librosa`, `soundfile`, `scipy`, `numpy`, `transformers`, `huggingface_hub>=0.20`, `munch`, `pyyaml`
+- Install `styletts2` itself with `--no-deps` (stage D) to avoid its `huggingface_hub==0.19.4` pin conflicting with the newer version above
 - Pre-download the StyleTTS2 model weights from HuggingFace
 - Register the env as a Jupyter/Kaggle notebook kernel (`Python (bulul-styletts2)`)
 - Set up `HF_HOME`, `TRANSFORMERS_CACHE`, and `TORCH_HOME` cache directories under `/kaggle/working/.cache/`
