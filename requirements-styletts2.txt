@@ -8,8 +8,9 @@
 #      (styletts2 pins huggingface_hub<0.20 which conflicts with newer transformers;
 #       install it with --no-deps so its transitive dep pin is skipped.
 #       All styletts2 runtime deps are explicitly listed in this file instead.)
-#   5. conda run python -c "import nltk; nltk.download('punkt_tab', quiet=True)"
-#      (NLTK tokenizer data required by styletts2.tts at import time)
+#   5. conda run python -c "import nltk; nltk.download('punkt', quiet=True); nltk.download('punkt_tab', quiet=True)"
+#      (NLTK tokenizer data required by styletts2.tts at import time;
+#       both punkt and punkt_tab downloaded for NLTK 3.8/3.9+ compatibility)
 #
 # Strategy: pin only top-level / API-sensitive deps; let pip resolve transitive
 # deps automatically. Avoid upper-bound pins on purely transitive packages unless
@@ -27,7 +28,7 @@ numpy>=1.24,<2.0
 
 # ── HuggingFace / ML stack ────────────────────────────────────────────────────
 transformers>=4.36,<5.0
-accelerate>=0.25.0,<0.26.0     # ! styletts2 0.1.x tested against accelerate 0.25.x only
+accelerate>=0.25.0             # styletts2 device management; upper-bound removed — 0.26+ is API compatible
 huggingface_hub>=0.20           # newer than styletts2's own pin; works at runtime
 cached-path>=1.5.1,<2.0        # styletts2 model download helper
 
@@ -37,6 +38,8 @@ gruut>=2.3.4,<3.0              # G2P backend used by styletts2.tts at import tim
 gruut-ipa>=0.13.0,<0.14.0      # ! paired with gruut 2.3.x
 gruut-lang-en>=2.0.0,<3.0      # English phoneme data for gruut
 langchain>=0.2.0,<0.3.0        # text splitter compat via langchain.text_splitter (pydantic v2 compatible; 0.3+ removed the compat shim)
+langchain-core>=0.2.0,<0.3.0   # explicit pin prevents pip falling back to 0.1.x (which requires packaging<24 and pydantic<2)
+langchain-text-splitters>=0.2.0,<0.3.0  # langchain 0.2.x unbundled text_splitter into this separate package; required for the compat shim
 
 # ── Neural-network / tensor utilities ─────────────────────────────────────────
 einops>=0.7.0,<0.8.0           # ! styletts2 uses einops.rearrange; 0.8+ has breaking API

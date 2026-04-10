@@ -161,8 +161,8 @@ run_q "$CONDA_EXE" run -n "$ENV_STYLETTS2" pip install --quiet --no-cache-dir \
 
 log_v "  Stage E: downloading NLTK tokenizer data (punkt_tab required by styletts2.tts)…"
 run_q "$CONDA_EXE" run -n "$ENV_STYLETTS2" python -c \
-    "import nltk; nltk.download('punkt_tab', quiet=True); nltk.download('averaged_perceptron_tagger_eng', quiet=True); print('NLTK data ready')" || \
-    warn "NLTK data download failed — synthesis may fail. Re-run 'bash setup_kaggle.sh' or manually: python -c \"import nltk; nltk.download('punkt_tab')\""
+    "import nltk; nltk.download('punkt', quiet=True); nltk.download('punkt_tab', quiet=True); nltk.download('averaged_perceptron_tagger', quiet=True); nltk.download('averaged_perceptron_tagger_eng', quiet=True); print('NLTK data ready')" || \
+    warn "NLTK data download failed — synthesis may fail. Re-run 'bash setup_kaggle.sh' or manually: python -c \"import nltk; nltk.download('punkt_tab');\""
 
 # ── 6b. Register env as a Jupyter/Kaggle kernel (optional, non-fatal) ─────────
 run_q "$CONDA_EXE" run -n "$ENV_STYLETTS2" python -m ipykernel install \
