@@ -36,29 +36,33 @@ This will:
 
 #### Selecting which StyleTTS2 checkpoints to download
 
-By default `setup_kaggle.sh` downloads **both** available voice checkpoints (LJSpeech and LibriTTS).
+By default `setup_kaggle.sh` downloads **all** available voice checkpoints.
 You can control this with `--checkpoints` (or the `STYLETTS2_CHECKPOINTS` env var):
 
 | Label | Model | Description |
 |---|---|---|
-| `ljspeech` | StyleTTS2-LJSpeech | Single-speaker, female American English |
-| `libri` | StyleTTS2-LibriTTS | Multi-speaker, various accents |
+| `ljspeech` | StyleTTS2-LJSpeech | Single-speaker, female American English (epoch 100) |
+| `libri` | StyleTTS2-LibriTTS | Multi-speaker, various accents (epoch 20, lighter) |
+| `libri-100` | StyleTTS2-LibriTTS | Multi-speaker, various accents (epoch 100, higher quality) |
 
 ```bash
-# Default: install both checkpoints (recommended)
+# Default: install all available checkpoints (recommended)
 bash setup_kaggle.sh
 
-# Install only the LJSpeech checkpoint (faster, less storage)
+# Install only the LJSpeech checkpoint (fastest, least storage)
 bash setup_kaggle.sh --checkpoints ljspeech
 
-# Install both explicitly
-bash setup_kaggle.sh --checkpoints "ljspeech,libri"
+# Install LJSpeech + LibriTTS epoch 100 only
+bash setup_kaggle.sh --checkpoints "ljspeech,libri-100"
+
+# Install all three explicitly
+bash setup_kaggle.sh --checkpoints "ljspeech,libri,libri-100"
 
 # Using the env var instead
-STYLETTS2_CHECKPOINTS="ljspeech,libri" bash setup_kaggle.sh
+STYLETTS2_CHECKPOINTS="ljspeech,libri,libri-100" bash setup_kaggle.sh
 ```
 
-Up to **5** checkpoints can be installed simultaneously (the catalog currently has 2 official ones).
+Up to **5** checkpoints can be installed simultaneously (the catalog currently has 3 official ones).
 
 > **Note:** `ASR` utility weights (e.g. `epoch_00080.pth` inside `models/StyleTTS2/Utils/ASR/`) are
 > **not** TTS voice checkpoints — they are internal synthesis helpers downloaded automatically by
@@ -130,10 +134,10 @@ run_streaming(f"cd {REPO_DIR} && bash setup_kaggle.sh")
 
 print("\n✅ Setup complete.")
 print("  • Envs: bulul-styletts2 (TTS/API), bulul-rvc (voice conversion)")
-print("  • Checkpoints installed: ljspeech (LJSpeech), libri (LibriTTS)")
+print("  • Checkpoints installed: ljspeech (LJSpeech), libri (LibriTTS ep20), libri-100 (LibriTTS ep100)")
 print("  • Run 'bash host_service.sh' to start the API.")
 print("  • Run 'bash tests/test.sh --help' for voice generation options.")
-print("  • A/B test checkpoints: bash tests/test.sh --ckpt-name libri --no-rvc")
+print("  • A/B test checkpoints: bash tests/test.sh --ckpt-name libri-100 --no-rvc")
 ```
 
 ### Step 4 — Call the endpoint
@@ -183,6 +187,8 @@ cp .env.example .env
 | `APP_PORT` | Server port (default `8000`) |
 | `TMP_AUDIO_DIR` | Temp audio directory (default `runtime/tmp`) |
 | `DEFAULT_AUDIO_FORMAT` | Default format `mp3` or `wav` |
+| `STYLETTS2_CKPT_NAME` | Checkpoint the API server loads: `ljspeech` (default), `libri`, `libri-100` |
+| `USE_CPU_INFERENCE` | Set to `1` to force CPU inference even when a GPU is available (default `0`) |
 
 ---
 
@@ -238,7 +244,8 @@ Each environment is created and managed by `setup_kaggle.sh`. They are
 | Asset | Path | How to obtain |
 |---|---|---|
 | StyleTTS2 checkpoint (LJSpeech) | `models/styletts2/epoch_2nd_00100.pth` | Downloaded by `bash setup_kaggle.sh` |
-| StyleTTS2 checkpoint (LibriTTS) | `models/styletts2/epoch_2nd_00020_libri.pth` | Downloaded by `bash setup_kaggle.sh` |
+| StyleTTS2 checkpoint (LibriTTS epoch 20) | `models/styletts2/epoch_2nd_00020_libri.pth` | Downloaded by `bash setup_kaggle.sh` |
+| StyleTTS2 checkpoint (LibriTTS epoch 100) | `models/styletts2/epochs_2nd_00100_libri.pth` | Downloaded by `bash setup_kaggle.sh` |
 | StyleTTS2 config (LJSpeech) | `models/styletts2/config.yml` | Downloaded by `bash setup_kaggle.sh` |
 | StyleTTS2 config (LibriTTS) | `models/styletts2/config_libri.yml` | Downloaded by `bash setup_kaggle.sh` |
 | StyleTTS2 source | `models/StyleTTS2/` | Cloned by `bash setup_kaggle.sh` |
@@ -267,11 +274,18 @@ conda run -n bulul-styletts2 python -u scripts/synthesize.py \
     --text "Welcome to the podcast." \
     --output /tmp/base.wav
 
-# Using the LibriTTS multi-speaker checkpoint
+# Using the LibriTTS multi-speaker checkpoint (epoch 20, lighter)
 conda run -n bulul-styletts2 python -u scripts/synthesize.py \
     --text "Welcome to the podcast." \
     --output /tmp/base_libri.wav \
     --ckpt  models/styletts2/epoch_2nd_00020_libri.pth \
+    --config models/styletts2/config_libri.yml
+
+# Using the LibriTTS multi-speaker checkpoint (epoch 100, higher quality)
+conda run -n bulul-styletts2 python -u scripts/synthesize.py \
+    --text "Welcome to the podcast." \
+    --output /tmp/base_libri100.wav \
+    --ckpt  models/styletts2/epochs_2nd_00100_libri.pth \
     --config models/styletts2/config_libri.yml
 
 # Force CPU inference (no GPU required)
@@ -300,8 +314,11 @@ conda run -n bulul-rvc python -u scripts/rvc_convert.py \
 # StyleTTS2 only (no RVC model required) — uses LJSpeech checkpoint by default
 bash tests/test.sh --text "Hello, this is a test."
 
-# Use the LibriTTS multi-speaker checkpoint instead
+# Use the LibriTTS multi-speaker checkpoint (epoch 20)
 bash tests/test.sh --text "Hello, this is a test." --ckpt-name libri
+
+# Use the LibriTTS multi-speaker checkpoint (epoch 100, higher quality)
+bash tests/test.sh --text "Hello, this is a test." --ckpt-name libri-100
 
 # Force CPU inference (no GPU required)
 bash tests/test.sh --text "Hello, this is a test." --cpu --no-rvc

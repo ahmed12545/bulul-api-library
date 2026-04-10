@@ -8,10 +8,10 @@
 #   --verbose              Show full subprocess output instead of summary-only mode.
 #                          Default: quiet mode (logs written to runtime/logs/setup.log).
 #   --checkpoints LABELS   Comma-separated list of StyleTTS2 checkpoint labels to
-#                          download (default: "ljspeech,libri"; max 5).
-#                          Valid labels: ljspeech, libri
+#                          download (default: "ljspeech,libri,libri-100"; max 5).
+#                          Valid labels: ljspeech, libri, libri-100
 #                          Example: --checkpoints ljspeech
-#                                   --checkpoints "ljspeech,libri"
+#                                   --checkpoints "ljspeech,libri,libri-100"
 #
 # Creates two isolated conda environments:
 #   bulul-styletts2  — StyleTTS2 TTS synthesis + API server
@@ -22,7 +22,7 @@ set -euo pipefail
 
 # ── Defaults ──────────────────────────────────────────────────────────────────
 VERBOSE=0
-STYLETTS2_CHECKPOINTS="${STYLETTS2_CHECKPOINTS:-ljspeech,libri}"
+STYLETTS2_CHECKPOINTS="${STYLETTS2_CHECKPOINTS:-ljspeech,libri,libri-100}"
 
 while [[ $# -gt 0 ]]; do
     case "$1" in

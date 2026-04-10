@@ -8,8 +8,8 @@
 #   BULUL_VERBOSE           — 1 for verbose output, 0 for quiet (default: 0)
 #   MINICONDA_DIR           — path to Miniconda (default: $HOME/miniconda3)
 #   STYLETTS2_CHECKPOINTS   — comma-separated list of checkpoint labels to
-#                             download (default: "ljspeech,libri"; max 5).
-#                             Valid labels: ljspeech, libri
+#                             download (default: "ljspeech,libri,libri-100"; max 5).
+#                             Valid labels: ljspeech, libri, libri-100
 #                             Example: STYLETTS2_CHECKPOINTS="ljspeech" bash download_models.sh
 #
 # StyleTTS2 has no setup.py/pyproject.toml so it cannot be pip-installed as a
@@ -100,13 +100,14 @@ log_v "  styletts2 pip package installed"
 CKPT_CATALOG=(
     "ljspeech|https://huggingface.co/yl4579/StyleTTS2-LJSpeech/resolve/main/Models/LJSpeech/epoch_2nd_00100.pth|https://huggingface.co/yl4579/StyleTTS2-LJSpeech/resolve/main/Models/LJSpeech/config.yml|epoch_2nd_00100.pth|config.yml"
     "libri|https://huggingface.co/yl4579/StyleTTS2-LibriTTS/resolve/main/Models/LibriTTS/epochs_2nd_00020.pth|https://huggingface.co/yl4579/StyleTTS2-LibriTTS/resolve/main/Models/LibriTTS/config.yml|epoch_2nd_00020_libri.pth|config_libri.yml"
+    "libri-100|https://huggingface.co/yl4579/StyleTTS2-LibriTTS/resolve/main/Models/LibriTTS/epochs_2nd_00100.pth|https://huggingface.co/yl4579/StyleTTS2-LibriTTS/resolve/main/Models/LibriTTS/config.yml|epochs_2nd_00100_libri.pth|config_libri.yml"
 )
 
 # Which checkpoints to install: comma-separated labels from CKPT_CATALOG.
-# Default: install both available voice checkpoints.
+# Default: install all three available voice checkpoints.
 # Override at runtime:  STYLETTS2_CHECKPOINTS="ljspeech" bash download_models.sh
 # Or via setup_kaggle:  bash setup_kaggle.sh --checkpoints ljspeech
-STYLETTS2_CHECKPOINTS="${STYLETTS2_CHECKPOINTS:-ljspeech,libri}"
+STYLETTS2_CHECKPOINTS="${STYLETTS2_CHECKPOINTS:-ljspeech,libri,libri-100}"
 
 # Parse requested labels into an array and cap at 5
 IFS=',' read -ra _DESIRED_CKPTS <<< "$STYLETTS2_CHECKPOINTS"

@@ -46,8 +46,24 @@ def _load_tts_model():
         return _tts_model
 
     models_dir = Path("models/styletts2")
-    ckpt = models_dir / "epoch_2nd_00100.pth"
-    cfg = models_dir / "config.yml"
+
+    # Allow selecting which installed checkpoint the API uses via env var.
+    # Valid values match the download_models.sh catalog labels: ljspeech, libri, libri-100.
+    ckpt_name = os.getenv("STYLETTS2_CKPT_NAME", "ljspeech").strip()
+    _ckpt_map = {
+        "ljspeech":  ("epoch_2nd_00100.pth",      "config.yml"),
+        "libri":     ("epoch_2nd_00020_libri.pth", "config_libri.yml"),
+        "libri-100": ("epochs_2nd_00100_libri.pth", "config_libri.yml"),
+    }
+    if ckpt_name not in _ckpt_map:
+        print(
+            f"[app] WARNING: Unknown STYLETTS2_CKPT_NAME='{ckpt_name}'. "
+            f"Valid values: {', '.join(_ckpt_map)}. Falling back to 'ljspeech'."
+        )
+        ckpt_name = "ljspeech"
+    _ckpt_file, _cfg_file = _ckpt_map[ckpt_name]
+    ckpt = models_dir / _ckpt_file
+    cfg = models_dir / _cfg_file
 
     if not ckpt.exists() or not cfg.exists():
         # Model not downloaded yet — run in stub/demo mode
@@ -62,8 +78,10 @@ def _load_tts_model():
         # still starts in stub mode when the package is not installed.
         from styletts2 import tts as styletts2_tts  # type: ignore[import]
 
-        device = "cuda" if torch.cuda.is_available() else "cpu"
-        print(f"[app] Loading StyleTTS2 on {device}…")
+        # USE_CPU_INFERENCE=1 forces CPU even when a GPU is available.
+        _use_cpu = os.getenv("USE_CPU_INFERENCE", "0").strip() in ("1", "true", "True", "yes")
+        device = "cpu" if _use_cpu else ("cuda" if torch.cuda.is_available() else "cpu")
+        print(f"[app] Loading StyleTTS2 ({ckpt_name}) on {device}…")
         _tts_model = styletts2_tts.StyleTTS2(
             model_checkpoint_path=str(ckpt),
             config_path=str(cfg),

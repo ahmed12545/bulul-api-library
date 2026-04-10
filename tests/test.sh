@@ -8,10 +8,10 @@
 #   --text TEXT           Text to synthesize (default: built-in podcast sample)
 #   --output-dir DIR      Output directory   (default: /kaggle/working/voice_tests
 #                                             or ./output/voice_tests if not on Kaggle)
-#   --ckpt-name LABEL     StyleTTS2 checkpoint to use: ljspeech|libri
+#   --ckpt-name LABEL     StyleTTS2 checkpoint to use: ljspeech|libri|libri-100
 #                         (default: ljspeech — the LJSpeech single-speaker model)
 #                         Run 'bash setup_kaggle.sh' (or download_models.sh) with
-#                         STYLETTS2_CHECKPOINTS="ljspeech,libri" to get both.
+#                         STYLETTS2_CHECKPOINTS="ljspeech,libri,libri-100" to get all three.
 #   --cpu                 Force CPU inference (default: auto-select GPU if available)
 #   --voice-model PATH    Path to RVC .pth model (skips RVC step if not provided)
 #   --voice-index PATH    Path to RVC .index file (optional; improves RVC quality)
@@ -37,17 +37,18 @@
 #   (unbuffered) so their output streams to the cell in real time.
 #
 # Required assets (before running):
-#   models/styletts2/epoch_2nd_00100.pth   — StyleTTS2 LJSpeech checkpoint (ljspeech)
-#   models/styletts2/epoch_2nd_00020_libri.pth — StyleTTS2 LibriTTS checkpoint (libri)
-#   models/styletts2/config.yml             — LJSpeech config
-#   models/styletts2/config_libri.yml       — LibriTTS config
-#   models/StyleTTS2/                       — StyleTTS2 source tree
-#   models/rvc/<name>.pth                   — RVC model (for voice conversion)
-#   models/rvc/<name>.index                 — RVC index (optional)
+#   models/styletts2/epoch_2nd_00100.pth       — StyleTTS2 LJSpeech checkpoint (ljspeech)
+#   models/styletts2/epoch_2nd_00020_libri.pth — StyleTTS2 LibriTTS checkpoint (libri, epoch 20)
+#   models/styletts2/epochs_2nd_00100_libri.pth — StyleTTS2 LibriTTS checkpoint (libri-100, epoch 100)
+#   models/styletts2/config.yml                — LJSpeech config
+#   models/styletts2/config_libri.yml          — LibriTTS config (shared by libri and libri-100)
+#   models/StyleTTS2/                          — StyleTTS2 source tree
+#   models/rvc/<name>.pth                      — RVC model (for voice conversion)
+#   models/rvc/<name>.index                    — RVC index (optional)
 #
 # Run 'bash setup_kaggle.sh' to download all StyleTTS2 and RVC assets.
-# To download both LJSpeech and LibriTTS checkpoints:
-#   STYLETTS2_CHECKPOINTS="ljspeech,libri" bash setup_kaggle.sh
+# To download all three StyleTTS2 checkpoints (default):
+#   bash setup_kaggle.sh
 
 set -euo pipefail
 
@@ -293,8 +294,12 @@ case "$CKPT_NAME" in
         CKPT="$REPO_ROOT/models/styletts2/epoch_2nd_00020_libri.pth"
         CFG="$REPO_ROOT/models/styletts2/config_libri.yml"
         ;;
+    libri-100)
+        CKPT="$REPO_ROOT/models/styletts2/epochs_2nd_00100_libri.pth"
+        CFG="$REPO_ROOT/models/styletts2/config_libri.yml"
+        ;;
     *)
-        die "Unknown --ckpt-name '$CKPT_NAME'. Valid values: ljspeech, libri"
+        die "Unknown --ckpt-name '$CKPT_NAME'. Valid values: ljspeech, libri, libri-100"
         ;;
 esac
 
@@ -306,7 +311,7 @@ ASSETS_OK=1
 [ -d "$STYLETTS2_SRC" ] || { warn "Missing StyleTTS2 source: $STYLETTS2_SRC"; ASSETS_OK=0; }
 
 if [ "$ASSETS_OK" -eq 0 ]; then
-    die "Required assets missing. Run 'bash setup_kaggle.sh' to download them. For the 'libri' checkpoint run: STYLETTS2_CHECKPOINTS=\"ljspeech,libri\" bash setup_kaggle.sh"
+    die "Required assets missing. Run 'bash setup_kaggle.sh' to download them. For the 'libri'/'libri-100' checkpoints run: STYLETTS2_CHECKPOINTS=\"ljspeech,libri,libri-100\" bash setup_kaggle.sh"
 fi
 ok "Assets validated"
 
