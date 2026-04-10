@@ -199,10 +199,17 @@ if [ -n "$_ENV_RUNNER" ]; then
         "from styletts2 import tts; print('[preflight] styletts2 OK')" \
         >> "$TEST_LOG" 2>&1 || PREFLIGHT_EXIT=$?
     if [ "$PREFLIGHT_EXIT" -ne 0 ]; then
+        MISSING_MOD=$(grep -oP "No module named '\K[^']+" "$TEST_LOG" | tail -1 || true)
         fail "Preflight FAILED — styletts2 not importable in '$ENV_STYLETTS2'"
         fail "  Python interpreter: ${_SYNTH_PYTHON:-unknown}"
-        fail "  Fix by running: bash setup_kaggle.sh"
-        fail "  Or manually: ${_CONDA_EXE:-conda} run -n $ENV_STYLETTS2 pip install styletts2"
+        if [ -n "$MISSING_MOD" ]; then
+            fail "  Missing module: '$MISSING_MOD'"
+            fail "  Fix: ${_CONDA_EXE:-conda} run -n $ENV_STYLETTS2 pip install $MISSING_MOD"
+            fail "  Or reinstall all deps: bash setup_kaggle.sh"
+        else
+            fail "  Fix by running: bash setup_kaggle.sh"
+            fail "  Or manually: ${_CONDA_EXE:-conda} run -n $ENV_STYLETTS2 pip install styletts2"
+        fi
         fail "  Log: $TEST_LOG"
         tail -n 20 "$TEST_LOG" >&2 || true
         exit 1
