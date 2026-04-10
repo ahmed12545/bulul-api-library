@@ -1,4 +1,4 @@
-# tests/podcast_6voices.yaml — multi-voice XTTS2 cloning configuration (template)
+# tests/podcast_6voices.yaml — multi-voice StyleTTS2 cloning configuration (template)
 #
 # Usage:
 #   bash tests/test.sh --ref-wav "voice refs/speaker1.wav"
@@ -11,7 +11,8 @@
 #   - 6–30 s of clean, clear speech (longer = better similarity)
 #   - WAV format, 22050 or 44100 Hz, mono or stereo
 #   - Minimal background noise
-#   - Language should match the synthesis language (--language)
+#
+# Migration note: XTTS2 removed; RVC removed. Now uses StyleTTS2.
 
 # Optional: override the synthesized text when running the test script
 text: "Welcome back to the Daily Insight podcast. Today we break down top stories in technology and culture, with fast context and practical takeaways you can use immediately."
@@ -22,24 +23,18 @@ text: "Welcome back to the Daily Insight podcast. Today we break down top storie
 voices:
   - label: speaker1
     ref_wav: "voice refs/speaker1.wav"
-    language: en
 
   - label: speaker2
     ref_wav: "voice refs/speaker2.wav"
-    language: en
 
   - label: speaker3
     ref_wav: "voice refs/speaker3.wav"
-    language: en
 
   - label: speaker4
     ref_wav: "voice refs/speaker4.wav"
-    language: en
 
   - label: speaker5
     ref_wav: "voice refs/speaker5.wav"
-    language: en
 
   - label: speaker6
     ref_wav: "voice refs/speaker6.wav"
-    language: en

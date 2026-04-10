@@ -1,6 +1,8 @@
 # bulul-api-library
 
-AI-powered podcast generation API. Accepts a topic and a CEFR language level (A1–C2), generates a 5–6 minute podcast script via Groq LLM, synthesises audio with **XTTS2** (zero-shot voice cloning), and returns the audio file. The file is automatically deleted after delivery.
+AI-powered podcast generation API. Accepts a topic and a CEFR language level (A1–C2), generates a 5–6 minute podcast script via Groq LLM, synthesises audio with **StyleTTS2** (voice cloning from reference WAV), and returns the audio file. The file is automatically deleted after delivery.
+
+> **Migration note:** XTTS2 has been removed by user request. RVC has also been removed. This project now uses StyleTTS2 exclusively.
 
 ---
 
@@ -13,9 +15,8 @@ cd bulul-api-library
 ```
 
 ### Step 2 — Add your voice reference files (optional)
-You can either:
-- **Use a built-in base speaker** (no files needed) — see [speaker-ID mode](#xtts2-base-speaker-id-mode) below.
-- **Clone a voice** — place one or more `.wav` files (6–30 s of clear speech) in the `voice refs/` folder.
+Place one or more `.wav` files (6–30 s of clear speech) in the `voice refs/` folder for voice cloning.
+If no reference is provided, StyleTTS2 uses its built-in default voice.
 
 ```
 voice refs/
@@ -26,40 +27,23 @@ voice refs/
 
 See [`voice refs/README.md`](voice%20refs/README.md) for guidelines on recording or obtaining reference audio.
 
-### Step 3 — Run setup (Miniconda + conda env + XTTS2 deps)
+### Step 3 — Run setup (Miniconda + conda env + StyleTTS2 deps)
 ```bash
 bash setup_kaggle.sh
 ```
 This will:
+- Install `espeak-ng` (system dependency required by the phonemizer library)
 - Install Miniconda if not already present
 - Accept Anaconda channel Terms of Service (required in non-interactive environments)
-- Create one conda environment: **`bulul-xtts2`** (Python 3.10)
-- Install PyTorch **2.1.2** + torchaudio **2.1.2** from the CUDA 12.1 wheel index (stage A)
-- Install XTTS2-only dependencies from `requirements-xtts2.txt` (stage B):
-  - `TTS==0.22.0`, `transformers==4.38.2`, `tokenizers==0.15.2`, `accelerate==0.27.2`
-  - `sentencepiece==0.1.99`, `pydantic==2.6.4`, `ipykernel==6.29.3`
-  - numpy, scipy, librosa, soundfile are pulled in automatically by TTS (no explicit pin — see note below)
-- Pre-download the XTTS2 model weights (~2 GB) with `COQUI_TOS_AGREED=1`
-- Register the env as a Jupyter/Kaggle notebook kernel (`Python (bulul-xtts2)`)
+- Create one conda environment: **`bulul-styletts2`** (Python 3.10)
+- Install PyTorch **2.1.2** + torchaudio **2.1.2** from the CUDA 12.1 wheel index (stage B)
+- Install StyleTTS2-only dependencies from `requirements-styletts2.txt` (stage C):
+  - `styletts2`, `phonemizer`, `librosa`, `soundfile`, `scipy`, `numpy`, `transformers`, `huggingface_hub`
+- Pre-download the StyleTTS2 model weights from HuggingFace
+- Register the env as a Jupyter/Kaggle notebook kernel (`Python (bulul-styletts2)`)
 - Set up `HF_HOME`, `TRANSFORMERS_CACHE`, and `TORCH_HOME` cache directories under `/kaggle/working/.cache/`
 
 > **Note:** The script is idempotent — re-running it safely skips already-complete steps.
-
-#### Why two install stages and a separate requirements-xtts2.txt?
-
-`torch` must be pulled from the PyTorch CUDA 12.1 wheel index
-(`https://download.pytorch.org/whl/cu121`), which is not PyPI, so it must be
-installed in a dedicated first pass.
-
-`numpy`, `scipy`, `librosa`, `soundfile`, and `numba` are **intentionally absent**
-from `requirements-xtts2.txt`.  `TTS==0.22.0` declares compatible ranges for all of
-them as transitive dependencies and pip resolves the correct versions automatically.
-Pinning `numpy==1.26.4` explicitly in the same pip pass as `TTS==0.22.0` caused a
-`ResolutionImpossible` error because TTS's transitive `trainer` dependency no longer
-satisfies that exact pin on current PyPI metadata.
-
-`requirements.txt` now contains only the API / web-server layer packages
-(fastapi, uvicorn, groq, pyngrok, …) and is **not** used by `setup_kaggle.sh`.
 
 #### Output mode
 
@@ -82,12 +66,12 @@ You will be prompted for:
 - **ngrok auth token** — get one at <https://dashboard.ngrok.com>
 
 The script will:
-1. Activate the `bulul-xtts2` conda env
+1. Activate the `bulul-styletts2` conda env
 2. Export `HF_HOME`, `TRANSFORMERS_CACHE`, and `TORCH_HOME` cache dirs
 3. Start the FastAPI server on port 8000
 4. Open an ngrok tunnel and print the public URL
 
-> **Note:** On first run after setup XTTS2 may take a minute to load. Subsequent starts are faster.
+> **Note:** On first run after setup StyleTTS2 may take a minute to load.
 
 ### Quick Kaggle cell (clone + setup + model download)
 
@@ -119,19 +103,18 @@ run_streaming(f"git clone {REPO_URL} {REPO_DIR}")
 run_streaming(f"chmod +x {REPO_DIR}/setup_kaggle.sh {REPO_DIR}/download_models.sh "
               f"{REPO_DIR}/host_service.sh {REPO_DIR}/tests/test.sh")
 
-# 3) (Optional) Add a reference WAV for voice cloning — or use --voice-id below instead
+# 3) (Optional) Add a reference WAV for voice cloning
 # run_streaming(f"cp /path/to/my_voice.wav '{REPO_DIR}/voice refs/my_voice.wav'")
 
-# 4) Run full setup (Miniconda + conda env + XTTS2 deps + model download)
+# 4) Run full setup (Miniconda + conda env + StyleTTS2 deps + model download)
 run_streaming(f"cd {REPO_DIR} && bash setup_kaggle.sh")
 
 print("\n✅ Setup complete.")
-print("  • Env: bulul-xtts2 (XTTS2 synthesis + API)")
-print("  • Quick test with built-in speaker:")
-print(f"      bash {REPO_DIR}/tests/test.sh --voice-id puck --text 'Hello from Puck.'")
-print("  • List all built-in speaker IDs:")
-print(f"      bash {REPO_DIR}/tests/test.sh --list-speakers")
-print("  • Or place reference WAVs in 'voice refs/' for voice cloning.")
+print("  • Env: bulul-styletts2 (StyleTTS2 synthesis + API)")
+print("  • Quick test with default voice:")
+print(f"      bash {REPO_DIR}/tests/test.sh --text 'Hello from Bulul.'")
+print("  • Quick test with voice cloning:")
+print(f"      bash {REPO_DIR}/tests/test.sh --ref-wav 'voice refs/my_voice.wav' --text 'Hello.'")
 print("  • Run 'bash host_service.sh' to start the API.")
 print("  • Run 'bash tests/test.sh --help' for all synthesis options.")
 ```
@@ -168,7 +151,7 @@ Returns the audio file directly as `audio/mpeg` or `audio/wav`.
 The file is deleted from the server automatically after the response is sent.
 
 The voice used for synthesis is determined by the first `.wav` file found in the `voice refs/` folder.
-If none is present, a built-in XTTS2 speaker is used as fallback.
+If none is present, the StyleTTS2 default voice is used as fallback.
 
 ---
 
@@ -192,10 +175,14 @@ cp .env.example .env
 ## Run on a server (non-Kaggle)
 
 ```bash
-# Install deps into your Python environment
-pip install -r requirements.txt
+# Install system dependency (required for phonemizer)
+apt-get install -y espeak-ng libespeak-ng-dev
 
-# Download XTTS2 assets (creates voice refs/ dir + pre-downloads model)
+# Install deps into your Python environment
+pip install torch torchaudio --index-url https://download.pytorch.org/whl/cu121
+pip install -r requirements-styletts2.txt
+
+# Download StyleTTS2 assets (creates voice refs/ dir + pre-downloads model)
 bash download_models.sh
 
 # Set env vars and start
@@ -218,56 +205,19 @@ bash tests/test_scripts.sh
 
 ---
 
-## XTTS2 voice cloning pipeline
+## StyleTTS2 voice synthesis pipeline
 
 ### Overview
 
-XTTS2 (Coqui TTS v2) synthesises speech directly in a target voice.  Two modes
-are available:
+StyleTTS2 synthesises speech in a target voice from a reference audio file.
 
 ```
-# Mode 1 — built-in base speaker (no reference WAV required):
-text + speaker-id  →  XTTS2  →  speech audio
+# Voice cloning from a reference WAV:
+text + reference WAV  →  StyleTTS2  →  cloned speech audio
 
-# Mode 2 — voice cloning from a reference WAV:
-text + reference WAV  →  XTTS2  →  cloned speech audio
+# Default voice (no reference WAV required):
+text  →  StyleTTS2  →  speech audio
 ```
-
-### XTTS2 base speaker-ID mode
-
-XTTS2 ships with a set of built-in voices you can use out of the box — no
-reference WAV required.  Pass `--voice-id` to select one.
-
-```bash
-# Built-in speaker by ID
-conda run -n bulul-xtts2 python -u scripts/synthesize.py \
-    --text "Hello from Puck." \
-    --output /tmp/puck.wav \
-    --voice-id puck
-
-conda run -n bulul-xtts2 python -u scripts/synthesize.py \
-    --text "Hello from Fenrir." \
-    --output /tmp/fenrir.wav \
-    --voice-id fenrir
-
-# List all available built-in speaker IDs
-conda run -n bulul-xtts2 python -u scripts/synthesize.py --list-speakers
-```
-
-Speaker IDs are matched **case-insensitively** (`puck` → `Puck`).
-
-Some common built-in speakers:
-
-| ID (case-insensitive) | Style |
-|---|---|
-| `Puck` | Expressive male |
-| `Fenrir` | Deep male |
-| `Ana Florence` | Warm female |
-| `Andrew Chipper` | Upbeat male |
-| `Claribel Dervla` | Calm female |
-| `Daisy Studious` | Clear female |
-
-Run `--list-speakers` for the complete list from the loaded model.
 
 ### `voice refs/` folder (cloning mode)
 
@@ -284,35 +234,32 @@ See [`voice refs/README.md`](voice%20refs/README.md) for recording tips and form
 ### Running synthesis manually
 
 ```bash
-# Built-in speaker by ID (no reference WAV needed)
-conda run -n bulul-xtts2 python -u scripts/synthesize.py \
+# Default voice (no reference WAV needed)
+conda run -n bulul-styletts2 python -u scripts/synthesize.py \
     --text "Welcome to the podcast." \
-    --output /tmp/output.wav \
-    --voice-id puck
-
-# List all built-in speaker IDs
-conda run -n bulul-xtts2 python -u scripts/synthesize.py --list-speakers
+    --output /tmp/output.wav
 
 # Voice cloning from a specific reference WAV
-conda run -n bulul-xtts2 python -u scripts/synthesize.py \
+conda run -n bulul-styletts2 python -u scripts/synthesize.py \
     --text "Welcome to the podcast." \
     --output /tmp/output.wav \
     --ref-wav "voice refs/my_voice.wav"
 
 # Auto-detect first WAV in 'voice refs/' (omit --ref-wav)
-conda run -n bulul-xtts2 python -u scripts/synthesize.py \
+conda run -n bulul-styletts2 python -u scripts/synthesize.py \
     --text "Welcome to the podcast." \
     --output /tmp/output.wav
 
-# Different language (XTTS2 is multilingual)
-conda run -n bulul-xtts2 python -u scripts/synthesize.py \
-    --text "مرحباً بكم في البودكاست." \
-    --output /tmp/arabic_output.wav \
-    --ref-wav "voice refs/arabic_speaker.wav" \
-    --language ar
+# Adjust quality/style parameters
+conda run -n bulul-styletts2 python -u scripts/synthesize.py \
+    --text "Welcome to the podcast." \
+    --output /tmp/output.wav \
+    --ref-wav "voice refs/my_voice.wav" \
+    --diffusion-steps 10 \
+    --embedding-scale 1.5
 
 # Force CPU inference (no GPU required)
-conda run -n bulul-xtts2 python -u scripts/synthesize.py \
+conda run -n bulul-styletts2 python -u scripts/synthesize.py \
     --text "Welcome to the podcast." \
     --output /tmp/output_cpu.wav \
     --cpu
@@ -321,12 +268,8 @@ conda run -n bulul-xtts2 python -u scripts/synthesize.py \
 ### End-to-end test script (`tests/test.sh`)
 
 ```bash
-# Speaker-ID mode (no reference WAV needed)
-bash tests/test.sh --voice-id puck --text "Hello from Puck."
-bash tests/test.sh --voice-id fenrir --text "Hello from Fenrir."
-
-# List all available built-in speaker IDs
-bash tests/test.sh --list-speakers
+# Default voice (no reference WAV needed)
+bash tests/test.sh --text "Hello from Bulul."
 
 # Voice-cloning mode (provide a reference WAV)
 bash tests/test.sh \
@@ -334,8 +277,12 @@ bash tests/test.sh \
     --ref-wav "voice refs/my_voice.wav" \
     --output-dir /kaggle/working/voice_tests
 
-# Default test (auto-detects first WAV in 'voice refs/' or uses built-in fallback)
-bash tests/test.sh --text "Hello, this is a test."
+# Adjust quality parameters
+bash tests/test.sh \
+    --text "Hello." \
+    --ref-wav "voice refs/my_voice.wav" \
+    --diffusion-steps 10 \
+    --embedding-scale 1.5
 
 # Force CPU inference
 bash tests/test.sh --text "Hello." --cpu
@@ -354,109 +301,57 @@ Files are written to `--output-dir` (default: `/kaggle/working/voice_tests` on K
 
 | File | Description |
 |---|---|
-| `xtts2_output.wav` | XTTS2 synthesised output |
+| `styletts2_output.wav` | StyleTTS2 synthesised output |
 
 #### Logs
 
 All subprocess output is captured to `runtime/logs/test.log`. On failure the last 40 lines
 are printed automatically. Pass `--verbose` to stream everything to the cell.
 
-### Supported languages
+### StyleTTS2 parameters
 
-XTTS2 is multilingual. Use `--language` to set the synthesis language:
-
-| Code | Language |
-|---|---|
-| `en` | English (default) |
-| `ar` | Arabic |
-| `fr` | French |
-| `de` | German |
-| `es` | Spanish |
-| `pt` | Portuguese |
-| `pl` | Polish |
-| `tr` | Turkish |
-| `ru` | Russian |
-| `nl` | Dutch |
-| `cs` | Czech |
-| `it` | Italian |
-| `zh-cn` | Chinese (Simplified) |
+| Parameter | Default | Notes |
+|---|---|---|
+| `--diffusion-steps` | `5` | Higher = better quality, slower inference |
+| `--embedding-scale` | `1.0` | Style intensity; increase for stronger voice imitation |
 
 ### Headless / Kaggle compatibility defaults
 
 `tests/test.sh` and `scripts/synthesize.py` automatically normalise `MPLBACKEND` to `Agg`
 when the value is absent or is a Kaggle inline backend (`module://…`).
 
-### Legacy flags (StyleTTS2 / RVC)
+### Legacy flags (XTTS2 / RVC)
 
-This project has **fully migrated to XTTS2**. StyleTTS2 and RVC have been removed.
-If you pass any legacy flag, both `tests/test.sh` and `scripts/synthesize.py` will
+This project has **migrated back to StyleTTS2**. XTTS2 and RVC have been removed.
+If you pass any legacy XTTS2/RVC flag, both `tests/test.sh` and `scripts/synthesize.py` will
 exit immediately with a clear migration message:
 
-| Legacy flag | Replacement |
+| Legacy flag | Notes |
 |---|---|
-| `--ckpt` | No equivalent — XTTS2 uses a single pre-downloaded model |
-| `--ckpt-name` | No equivalent |
-| `--voice-model` | `--ref-wav "voice refs/my_voice.wav"` |
-| `--voice-index` | No equivalent |
-| `--no-rvc` | No equivalent (RVC removed) |
-| `--config` (RVC YAML) | Pass `--ref-wav` directly |
-| `--diffusion-steps` | No equivalent |
-| `--embedding-scale` | No equivalent |
+| `--voice-id` | XTTS2 built-in speakers — removed. Use `--ref-wav` for voice cloning. |
+| `--list-speakers` | XTTS2 specific — removed. |
+| `--voice-model` | RVC specific — removed. |
+| `--voice-index` | RVC specific — removed. |
+| `--no-rvc` | RVC specific — removed. |
+| `--ckpt`, `--ckpt-name` | Custom checkpoints not supported in this release. |
 
 ---
 
 ## Troubleshooting
 
-### `No module named 'pkg_resources'` — synthesis fails despite correct env
+### `espeak-ng` not found — phonemizer fails
 
-**Symptom:** `tests/test.sh` or `scripts/synthesize.py` fails with
-`No module named 'pkg_resources'` even though the log shows the correct Python
-interpreter (`/root/miniconda3/envs/bulul-xtts2/bin/python`).
+**Symptom:** `phonemizer` or `styletts2` fails with `espeak-ng` not found.
 
-**Root cause:** `pkg_resources` is provided by `setuptools`.  When pip installs
-`TTS==0.22.0` it can silently downgrade or remove `setuptools` to satisfy a
-transitive dependency constraint, leaving the env without `pkg_resources` even
-though every other package was installed successfully.
-
-**How the scripts protect against this:**
-
-- `setup_kaggle.sh` installs `pip`, `setuptools`, and `wheel` *before* TTS
-  (stage A), and again *after* TTS (stage D) to undo any downgrade.  Setup
-  then runs a **hard fail-fast check** — if either `pkg_resources` or `TTS`
-  cannot be imported the script aborts with a clear message rather than letting
-  the problem surface silently at runtime:
-  ```
-  [setup] ✅ pkg_resources + TTS verified in 'bulul-xtts2'
-  ```
-- `tests/test.sh` runs a **preflight** step in the same conda runner before
-  starting the 600-second synthesis call:
-  ```
-  [test] Preflight: checking pkg_resources + TTS importable in 'bulul-xtts2'…
-  [test] ✅ Preflight passed: pkg_resources + TTS importable in 'bulul-xtts2'
-  ```
-  If the preflight fails it prints an actionable fix and exits immediately
-  instead of waiting for the synthesis timeout.
-- `scripts/synthesize.py` checks for `pkg_resources` *before* importing TTS
-  and prints the active interpreter path plus the exact repair command.
-
-**Quick repair** (if `pkg_resources` is missing in a live env):
-```python
-import subprocess
-# Adjust CONDA_PATH to match your $MINICONDA_DIR/bin/conda value.
-# On Kaggle the default is /root/miniconda3/bin/conda.
-CONDA_PATH = "/root/miniconda3/bin/conda"
-subprocess.run([
-    "bash", "-lc",
-    f'"{CONDA_PATH}" run -n bulul-xtts2 python -m pip install -U pip setuptools wheel '
-    f'&& "{CONDA_PATH}" run -n bulul-xtts2 pip install --no-cache-dir TTS==0.22.0',
-], check=True)
+**Fix:**
+```bash
+apt-get install -y espeak-ng libespeak-ng-dev
 ```
+Or re-run setup: `bash setup_kaggle.sh`
 
 ### Conda path mismatch (wrong env picked up)
 
-**Symptom:** The log shows `Conda exe : /root/miniconda3/bin/conda` and
-`Python exe : /root/miniconda3/envs/bulul-xtts2/bin/python`, but a repair run
-in a separate cell used a different `conda` binary.
+**Symptom:** The log shows the correct Python interpreter but synthesis still fails.
 
 **How these scripts resolve conda:**
 
@@ -470,18 +365,16 @@ All `conda run` calls go through `$CONDA_EXE` (never the bare `conda` command).
 `tests/test.sh` prints the resolved path at runtime:
 ```
 [test] Conda exe  : /root/miniconda3/bin/conda
-[test] Python exe : /root/miniconda3/envs/bulul-xtts2/bin/python
+[test] Python exe : /root/miniconda3/envs/bulul-styletts2/bin/python
 ```
-`scripts/synthesize.py` also prints `sys.executable` and the active conda env
-so any remaining mismatch is immediately visible in the log.
 
 ### Smoke test command reference
 
 ```bash
 bash tests/test.sh \
-  --text "This is a smoke test for XTTS2 voice cloning in Kaggle." \
+  --text "This is a smoke test for StyleTTS2 voice cloning in Kaggle." \
   --ref-wav "voice refs/clip_01.wav" \
-  --output-dir /kaggle/working/xtts_smoke_out
+  --output-dir /kaggle/working/styletts2_smoke_out
 ```
 
 Add `--verbose` to stream all subprocess output to the cell instead of the log file.
@@ -492,23 +385,25 @@ Add `--verbose` to stream all subprocess output to the cell instead of the log f
 
 ```
 bulul-api-library/
-├── app.py               # FastAPI service (XTTS2-powered)
-├── setup_kaggle.sh      # Miniconda + bulul-xtts2 conda env + XTTS2 setup
-├── download_models.sh   # XTTS2 model pre-download + voice refs dir setup
-├── host_service.sh      # Start API + ngrok tunnel (uses bulul-xtts2 env)
-├── requirements.txt     # Python dependencies (includes TTS for XTTS2)
-├── .env.example         # Example environment variables
-├── voice refs/          # Place reference WAVs here for voice cloning
-│   └── README.md        # Usage guide for voice reference files
+├── app.py                      # FastAPI service (StyleTTS2-powered)
+├── setup_kaggle.sh             # Miniconda + bulul-styletts2 conda env + StyleTTS2 setup
+├── download_models.sh          # StyleTTS2 model pre-download + voice refs dir setup
+├── host_service.sh             # Start API + ngrok tunnel (uses bulul-styletts2 env)
+├── requirements.txt            # API / web-server layer packages
+├── requirements-styletts2.txt  # StyleTTS2 model stack (torch, styletts2, phonemizer, …)
+├── requirements-xtts2.txt      # DEPRECATED — XTTS2 removed; see requirements-styletts2.txt
+├── .env.example                # Example environment variables
+├── voice refs/                 # Place reference WAVs here for voice cloning
+│   └── README.md               # Usage guide for voice reference files
 ├── scripts/
-│   ├── synthesize.py    # XTTS2 inference helper (unbuffered, Kaggle-friendly)
-│   └── rvc_convert.py   # Legacy stub — exits with migration message (RVC removed)
+│   ├── synthesize.py           # StyleTTS2 inference helper (unbuffered, Kaggle-friendly)
+│   └── rvc_convert.py          # Legacy stub — exits with migration message (RVC removed)
 ├── runtime/
-│   ├── tmp/             # Temp audio files (auto-deleted, gitignored)
-│   └── logs/            # Setup and test logs (gitignored)
+│   ├── tmp/                    # Temp audio files (auto-deleted, gitignored)
+│   └── logs/                   # Setup and test logs (gitignored)
 └── tests/
-    ├── test_app.py           # API route tests
-    ├── test_scripts.sh       # Shell script smoke checks
-    ├── test.sh               # End-to-end XTTS2 synthesis test
-    └── podcast_6voices.yaml  # Multi-voice config template (XTTS2 ref_wav format)
+    ├── test_app.py                  # API route tests
+    ├── test_scripts.sh              # Shell script smoke checks
+    ├── test.sh                      # End-to-end StyleTTS2 synthesis test
+    └── podcast_6voices.yaml         # Multi-voice config template
 ```

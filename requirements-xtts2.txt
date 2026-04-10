@@ -1,20 +1,7 @@
-# requirements-xtts2.txt — XTTS2 synthesis stack for Kaggle / headless environments
+# requirements-xtts2.txt — DEPRECATED
 #
-# Install order matters (see setup_kaggle.sh):
-#   1. pip install torch==2.1.2 torchaudio==2.1.2 --index-url https://download.pytorch.org/whl/cu121
-#   2. pip install -r requirements-xtts2.txt
+# ⚠️  XTTS2 has been removed from this project by user request.
+#     Use requirements-styletts2.txt and setup_kaggle.sh instead.
 #
-# numpy, scipy, librosa, soundfile, and numba are intentionally absent here.
-# TTS==0.22.0 pulls in compatible versions of those packages automatically.
-# Pinning numpy alongside TTS in a single pip pass causes a ResolutionImpossible
-# conflict (pip resolves TTS's transitive trainer dep against numpy, and an
-# explicit pin to 1.26.4 can violate that range on current PyPI metadata).
-#
-# Pinned to the exact set validated against Kaggle GPU (CUDA 12.1):
-TTS==0.22.0
-transformers==4.38.2
-tokenizers==0.15.2
-accelerate==0.27.2
-sentencepiece==0.1.99
-pydantic==2.6.4
-ipykernel==6.29.3
+# Migration note: XTTS2 removed; RVC removed. This project now uses StyleTTS2.
+# See README.md for updated setup instructions.

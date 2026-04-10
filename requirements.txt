@@ -1,16 +1,15 @@
 # API / service layer — web server, auth, and integration packages.
 #
-# XTTS2 model dependencies (TTS, torch, transformers, numpy, etc.) live in
-# requirements-xtts2.txt to avoid ResolutionImpossible conflicts caused by
-# pinning numpy alongside TTS's transitive trainer dependency in one pip pass.
+# StyleTTS2 model dependencies (torch, torchaudio, phonemizer, etc.) live in
+# requirements-styletts2.txt to keep model and API deps separate.
 #
 # For Kaggle / headless deployment use setup_kaggle.sh, which installs
-# requirements-xtts2.txt (not this file) inside the bulul-xtts2 conda env.
+# requirements-styletts2.txt inside the bulul-styletts2 conda env.
 fastapi==0.111.0
 uvicorn[standard]==0.29.0
 python-multipart==0.0.22
 groq==0.9.0
-# pydantic: 2.6.4 is validated against TTS 0.22.0; do not upgrade past 2.6.x without testing.
+# pydantic: 2.6.4 is validated against styletts2; do not upgrade past 2.6.x without testing.
 pydantic==2.6.4
 python-dotenv==1.0.1
 pyngrok==7.2.0

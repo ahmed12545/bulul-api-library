@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-scripts/synthesize.py — XTTS2 text-to-speech inference helper with voice cloning.
+scripts/synthesize.py — StyleTTS2 text-to-speech inference with voice cloning.
 
 Usage:
     # Voice cloning from a reference WAV:
@@ -9,30 +9,25 @@ Usage:
         --output out.wav \\
         --ref-wav "voice refs/my_voice.wav"
 
-    # Built-in base speaker by ID (no reference WAV required):
+    # Default voice (no reference WAV required):
     python -u scripts/synthesize.py \\
         --text "Hello world." \\
-        --output out.wav \\
-        --voice-id "Puck"
-
-    # List all built-in speaker IDs:
-    python -u scripts/synthesize.py --list-speakers
+        --output out.wav
 
 Place reference WAVs in the 'voice refs/' folder at the repo root.
-If --ref-wav is omitted and --voice-id is not set, the first .wav found in
-'voice refs/' is used.  If neither is available, the first built-in speaker
-is used as a safe fallback.
+If --ref-wav is omitted, the first .wav found in 'voice refs/' is used.
+If no reference is found, the StyleTTS2 default voice is used.
 
-Built-in XTTS2 base speakers include (case-insensitive match):
-    Puck, Fenrir, Claribel Dervla, Daisy Studious, Ana Florence, Andrew Chipper, …
-    Run with --list-speakers to see the full list from the loaded model.
+StyleTTS2 parameters:
+    --diffusion-steps N   Number of diffusion steps (default: 5)
+    --embedding-scale F   Style intensity (default: 1.0)
 
 All print statements use flush=True for Kaggle-friendly unbuffered output
 (avoids apparent hangs in notebook cells).
 
-NOTE: This project is XTTS2-only.  StyleTTS2 and RVC have been removed.
-      Legacy flags (--ckpt, --ckpt-name, --voice-model, --voice-index,
-      --no-rvc) are no longer accepted and will produce a clear error.
+Migration note: XTTS2 removed by user request. RVC removed.
+  Legacy flags (--voice-id, --list-speakers, --voice-model, --voice-index,
+  --no-rvc) are not accepted and will produce a clear error.
 """
 
 from __future__ import annotations
@@ -49,10 +44,17 @@ if not _mpl or _mpl.startswith("module://"):
     os.environ["MPLBACKEND"] = "Agg"
 
 # ── Legacy flag detection (fail fast with a helpful message) ──────────────────
+# --voice-id / --list-speakers were XTTS2-specific (built-in speakers).
+# --voice-model / --voice-index / --no-rvc were RVC-specific.
+# StyleTTS2 uses --ref-wav for voice cloning; no built-in speaker IDs.
 _LEGACY_FLAGS = {
-    "--ckpt", "--ckpt-name", "--config",
-    "--voice-model", "--voice-index", "--no-rvc",
-    "--diffusion-steps", "--embedding-scale",
+    "--voice-id",
+    "--list-speakers",
+    "--voice-model",
+    "--voice-index",
+    "--no-rvc",
+    "--ckpt",
+    "--ckpt-name",
 }
 
 
@@ -65,7 +67,14 @@ def _check_legacy_flags() -> None:
         name = raw.split("=")[0]
         if name in _LEGACY_FLAGS:
             log(f"ERROR: Legacy flag '{name}' is not supported.")
-            log("  This project is XTTS2-only. StyleTTS2 and RVC have been removed.")
+            if name in ("--voice-id", "--list-speakers"):
+                log("  XTTS2 built-in speaker IDs have been removed.")
+                log("  StyleTTS2 uses reference-WAV voice cloning (--ref-wav).")
+            elif name in ("--voice-model", "--voice-index", "--no-rvc"):
+                log("  RVC has been removed from this project.")
+            elif name in ("--ckpt", "--ckpt-name"):
+                log("  Custom checkpoint selection is not supported in this release.")
+                log("  The styletts2 package downloads the default model automatically.")
             log("  New usage:")
             log("    python scripts/synthesize.py \\")
             log("        --text  'Your text here.' \\")
@@ -85,7 +94,7 @@ def main() -> None:
     _check_legacy_flags()
 
     parser = argparse.ArgumentParser(
-        description="XTTS2 inference helper — voice cloning or built-in speaker synthesis"
+        description="StyleTTS2 inference helper — voice cloning or default-voice synthesis"
     )
     parser.add_argument("--text", help="Text to synthesize")
     parser.add_argument("--output", help="Output .wav path")
@@ -94,35 +103,27 @@ def main() -> None:
         default=None,
         metavar="PATH",
         help=(
-            "Reference WAV file for voice cloning (3–30 s of clean speech). "
+            "Reference WAV file for voice cloning (6–30 s of clean speech). "
             "If omitted, the first .wav found in 'voice refs/' is used. "
-            "Cannot be combined with --voice-id."
+            "If none is found, the StyleTTS2 default voice is used."
         ),
     )
     parser.add_argument(
-        "--voice-id",
-        default=None,
-        metavar="SPEAKER",
+        "--diffusion-steps",
+        type=int,
+        default=5,
+        metavar="N",
         help=(
-            "Built-in XTTS2 base speaker ID to use instead of a reference WAV. "
-            "Examples: 'Puck', 'Fenrir', 'Ana Florence', 'Andrew Chipper'. "
-            "Run with --list-speakers to see all available IDs. "
-            "Cannot be combined with --ref-wav."
+            "Number of StyleTTS2 diffusion steps (default: 5). "
+            "Higher values improve quality at the cost of speed."
         ),
     )
     parser.add_argument(
-        "--list-speakers",
-        action="store_true",
-        default=False,
-        help="Load the XTTS2 model and print all built-in speaker IDs, then exit.",
-    )
-    parser.add_argument(
-        "--language",
-        default="en",
-        help=(
-            "Language code for synthesis (default: en). "
-            "Supported: en, ar, fr, de, es, pt, pl, tr, ru, nl, cs, it, zh-cn, …"
-        ),
+        "--embedding-scale",
+        type=float,
+        default=1.0,
+        metavar="F",
+        help="StyleTTS2 embedding / style intensity (default: 1.0).",
     )
     parser.add_argument(
         "--cpu",
@@ -132,42 +133,36 @@ def main() -> None:
     )
     args = parser.parse_args()
 
-    # --list-speakers doesn't need --text / --output
-    if not args.list_speakers:
-        if not args.text:
-            parser.error("--text is required (unless --list-speakers is used)")
-        if not args.output:
-            parser.error("--output is required (unless --list-speakers is used)")
-
-    if args.ref_wav and args.voice_id:
-        log("ERROR: --ref-wav and --voice-id are mutually exclusive. Use one or the other.")
-        sys.exit(1)
+    if not args.text:
+        parser.error("--text is required")
+    if not args.output:
+        parser.error("--output is required")
 
     repo_root = Path(__file__).parent.parent
     voice_refs_dir = repo_root / "voice refs"
-    out_path = Path(args.output) if args.output else None
+    out_path = Path(args.output)
 
     # Diagnostics: print interpreter and active conda env so env-mismatch failures
     # are immediately visible in the log.
     log(f"Python   : {sys.executable}")
-    _conda_env = os.environ.get("CONDA_DEFAULT_ENV") or os.environ.get("CONDA_PREFIX", "").rsplit("/", 1)[-1] or "(unknown)"
+    _conda_env = (
+        os.environ.get("CONDA_DEFAULT_ENV")
+        or os.environ.get("CONDA_PREFIX", "").rsplit("/", 1)[-1]
+        or "(unknown)"
+    )
     log(f"Conda env: {_conda_env}")
-
-    if not args.list_speakers:
-        log(f"Output   : {out_path}")
-        log(f"Language : {args.language}")
+    log(f"Output   : {out_path}")
 
     # ── Resolve reference WAV ─────────────────────────────────────────────────
     ref_wav: Path | None = None
     if args.ref_wav:
         ref_wav = Path(args.ref_wav)
-    elif not args.voice_id:
-        # No explicit voice-id → fall back to auto-detect from voice refs/
+    else:
         ref_wav = _find_default_ref_wav(voice_refs_dir)
         if ref_wav:
             log(f"Ref WAV  : {ref_wav} (auto-detected from 'voice refs/')")
         else:
-            log("Ref WAV  : (none found in 'voice refs/' — will use built-in speaker)")
+            log("Ref WAV  : (none found in 'voice refs/' — using StyleTTS2 default voice)")
 
     if ref_wav and not ref_wav.exists():
         log(f"ERROR: Reference WAV not found: {ref_wav}")
@@ -189,86 +184,35 @@ def main() -> None:
         device = "cpu"
         log("Device   : cpu (no CUDA-capable GPU detected)")
 
-    # ── Pre-flight: pkg_resources must be available (part of setuptools) ─────────
-    # TTS==0.22.0 imports pkg_resources at load time.  An absent or broken
-    # setuptools package produces an opaque "No module named 'pkg_resources'"
-    # error.  Surface it here with the active interpreter path and a concrete fix.
-    try:
-        import pkg_resources  # noqa: F401
-    except ImportError:
-        log("ERROR: 'pkg_resources' is not importable — setuptools is missing from this env.")
-        log(f"  Python   : {sys.executable}")
-        log(f"  Env      : {_conda_env}")
-        log("  Fix: conda run -n bulul-xtts2 python -m pip install -U pip setuptools wheel")
-        log("  Or re-run setup: bash setup_kaggle.sh")
-        sys.exit(1)
-
-    # ── Load XTTS2 model ──────────────────────────────────────────────────────
-    log("Loading XTTS2 model (first run downloads ~2 GB from HuggingFace)…")
+    # ── Load StyleTTS2 model ──────────────────────────────────────────────────
+    log("Loading StyleTTS2 model (first run downloads weights from HuggingFace)…")
     t0 = time.time()
     try:
-        from TTS.api import TTS  # type: ignore[import]
+        from styletts2 import tts as stts2  # type: ignore[import]
     except ImportError as exc:
-        log(f"ERROR: Could not import TTS package: {exc}")
-        log("  Install with:  pip install TTS==0.22.0")
+        log(f"ERROR: Could not import styletts2 package: {exc}")
+        log("  Install with:  pip install styletts2")
+        log("  Also requires:  apt-get install espeak-ng")
         log("  Or re-run setup:  bash setup_kaggle.sh")
         sys.exit(1)
 
     try:
-        tts = TTS("tts_models/multilingual/multi-dataset/xtts_v2").to(device)
+        model = stts2.StyleTTS2()
     except Exception as exc:  # noqa: BLE001
-        log(f"ERROR: Failed to load XTTS2 model: {exc}")
+        log(f"ERROR: Failed to load StyleTTS2 model: {exc}")
         sys.exit(1)
     log(f"Model loaded in {time.time() - t0:.1f}s")
 
-    # ── --list-speakers mode ──────────────────────────────────────────────────
-    if args.list_speakers:
-        available = list(tts.speakers) if tts.speakers else []
-        print(f"[synthesize] Built-in XTTS2 speakers ({len(available)} total):", flush=True)
-        for s in available:
-            print(f"  {s}", flush=True)
-        return
-
-    # ── Resolve speaker name for built-in mode ────────────────────────────────
-    speaker_name: str | None = None
     if ref_wav:
         log(f"Mode     : voice cloning  (ref: {ref_wav})")
     else:
-        available_speakers = list(tts.speakers) if tts.speakers else []
-        if args.voice_id:
-            # Case-insensitive match so 'puck' finds 'Puck'
-            vid_lower = args.voice_id.strip().lower()
-            matched = next(
-                (s for s in available_speakers if s.lower() == vid_lower),
-                None,
-            )
-            if matched:
-                speaker_name = matched
-                log(f"Mode     : built-in speaker  (id: {speaker_name})")
-            else:
-                log(f"ERROR: Speaker ID '{args.voice_id}' not found in this XTTS2 model.")
-                log(f"  Available IDs ({len(available_speakers)} total):")
-                for s in available_speakers[:30]:
-                    log(f"    {s}")
-                if len(available_speakers) > 30:
-                    log(f"    … and {len(available_speakers) - 30} more (run --list-speakers)")
-                log("  Tip: Run with --list-speakers to see all available IDs.")
-                sys.exit(1)
-        else:
-            # Fallback: first available built-in speaker
-            speaker_name = available_speakers[0] if available_speakers else None
-            if speaker_name:
-                log(f"Mode     : built-in speaker  (fallback: {speaker_name})")
-            else:
-                log("ERROR: No built-in speakers found and no ref-wav supplied.")
-                log("  Use --ref-wav or --voice-id to specify a voice.")
-                sys.exit(1)
+        log("Mode     : default voice  (no reference WAV)")
 
     # ── Synthesise ────────────────────────────────────────────────────────────
     import numpy as np
     import soundfile as sf
 
-    # Split on [SEGMENT] markers (kept for backward-compat with multi-segment scripts).
+    # Split on [SEGMENT] markers for multi-segment podcast scripts.
     segments = [s.strip() for s in args.text.split("[SEGMENT]") if s.strip()]
     if not segments:
         log("ERROR: No text to synthesise (empty after stripping)")
@@ -276,24 +220,20 @@ def main() -> None:
 
     log(f"Synthesising {len(segments)} segment(s) ({len(args.text)} chars total)…")
     chunks: list[np.ndarray] = []
-    sample_rate = 24000  # XTTS2 native output rate
+    sample_rate = 24000  # StyleTTS2 native output rate
+
+    ref_wav_str = str(ref_wav) if ref_wav else None
 
     for i, segment in enumerate(segments, 1):
         log(f"  Segment {i}/{len(segments)} ({len(segment)} chars)…")
         t_seg = time.time()
         try:
-            if ref_wav:
-                audio = tts.tts(
-                    text=segment,
-                    speaker_wav=str(ref_wav),
-                    language=args.language,
-                )
-            else:
-                audio = tts.tts(
-                    text=segment,
-                    speaker=speaker_name,
-                    language=args.language,
-                )
+            audio = model.inference(
+                segment,
+                target_voice_path=ref_wav_str,
+                diffusion_steps=args.diffusion_steps,
+                embedding_scale=args.embedding_scale,
+            )
         except Exception as exc:  # noqa: BLE001
             log(f"ERROR: Synthesis failed on segment {i}: {exc}")
             sys.exit(1)
@@ -302,7 +242,6 @@ def main() -> None:
 
     combined = np.concatenate(chunks) if chunks else np.zeros(sample_rate, dtype=np.float32)
 
-    assert out_path is not None
     out_path.parent.mkdir(parents=True, exist_ok=True)
     sf.write(str(out_path), combined, sample_rate)
     sz = out_path.stat().st_size

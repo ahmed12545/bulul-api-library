@@ -1,13 +1,15 @@
 #!/usr/bin/env bash
-# download_models.sh — prepare XTTS2 assets (pre-download model, create voice refs dir)
+# download_models.sh — prepare StyleTTS2 assets (pre-download model, create voice refs dir)
 #
 # Idempotent: safe to run multiple times.
 #
 # Environment variables (set by setup_kaggle.sh):
 #   BULUL_VERBOSE     — 1 for verbose output, 0 for quiet (default: 0)
 #
-# XTTS2 weights (~2 GB) are downloaded from HuggingFace on first use.
+# StyleTTS2 weights are downloaded from HuggingFace on first use.
 # This script triggers that download so it does not happen during inference.
+#
+# Migration note: migrated to StyleTTS2 by user request. RVC removed.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -64,40 +66,27 @@ else
     warn "  No .wav files found in 'voice refs/'."
     warn "  → Place reference WAVs (6–30 s of clear speech) in: $VOICE_REFS_DIR"
     warn "  → See 'voice refs/README.md' for usage guidance."
-    warn "  → Synthesis will use a built-in XTTS2 speaker until a reference is added."
+    warn "  → Synthesis will use the StyleTTS2 default voice until a reference is added."
 fi
 
-# ── Step 2: Pre-download XTTS2 model ─────────────────────────────────────────
-log "Step 2/2 Pre-downloading XTTS2 model (~2 GB from HuggingFace)…"
+# ── Step 2: Pre-download StyleTTS2 model ──────────────────────────────────────
+log "Step 2/2 Pre-downloading StyleTTS2 model from HuggingFace…"
 log_v "  HF_HOME=$HF_HOME"
 
-# COQUI_TOS_AGREED=1 accepts the Coqui XTTS2 license non-interactively.
-# By running this script you confirm you have read and agree to the terms at:
-#   https://coqui.ai/cpml
-export COQUI_TOS_AGREED="${COQUI_TOS_AGREED:-1}"
-
-# Trigger the download by importing TTS and listing the model.
-# This ensures weights are in the HF cache before first synthesis.
 run_q python - << 'PY'
 import os, sys
 try:
-    from TTS.api import TTS
-    print("[download_models] Checking XTTS2 model…", flush=True)
-    # manager.download_model downloads weights into HF_HOME if not already cached.
-    manager = TTS.get_model_manager()
-    model_name = "tts_models/multilingual/multi-dataset/xtts_v2"
-    if manager.model_is_available(model_name):
-        print(f"[download_models] XTTS2 model already cached — skipping download.", flush=True)
-    else:
-        print(f"[download_models] Downloading XTTS2 weights…", flush=True)
-        manager.download_model(model_name)
-        print(f"[download_models] XTTS2 download complete.", flush=True)
+    from styletts2 import tts as stts2
+    print("[download_models] Initialising StyleTTS2 (downloads weights if not cached)…", flush=True)
+    # Instantiating StyleTTS2() triggers the HuggingFace model download on first run.
+    model = stts2.StyleTTS2()
+    print("[download_models] StyleTTS2 model ready.", flush=True)
 except Exception as exc:
-    print(f"[download_models] WARNING: Could not pre-download XTTS2 model: {exc}", flush=True)
+    print(f"[download_models] WARNING: Could not pre-download StyleTTS2 model: {exc}", flush=True)
     print("[download_models]   The model will be downloaded automatically on first synthesis.", flush=True)
     sys.exit(0)   # non-fatal
 PY
 
-ok "All XTTS2 assets ready"
+ok "All StyleTTS2 assets ready"
 log_v "   HF cache       : $HF_HOME"
 log_v "   Voice refs dir : $SCRIPT_DIR/voice refs"

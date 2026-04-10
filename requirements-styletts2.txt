@@ -1,0 +1,18 @@
+# requirements-styletts2.txt — StyleTTS2 synthesis stack for Kaggle / headless environments
+#
+# Install order matters (see setup_kaggle.sh):
+#   1. apt-get install -y espeak-ng libespeak-ng-dev  (system dep for phonemizer)
+#   2. pip install torch==2.1.2 torchaudio==2.1.2 --index-url https://download.pytorch.org/whl/cu121
+#   3. pip install -r requirements-styletts2.txt
+#
+# Pinned to the exact set validated against Kaggle GPU (CUDA 12.1, Python 3.10):
+styletts2>=0.1
+phonemizer>=3.2,<4.0
+librosa>=0.10,<0.11
+soundfile>=0.12
+scipy>=1.10,<1.13
+numpy>=1.24,<2.0
+transformers>=4.30,<5.0
+huggingface_hub>=0.20
+pydantic==2.6.4
+ipykernel==6.29.3

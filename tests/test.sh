@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# tests/test.sh — End-to-end XTTS2 voice synthesis test
+# tests/test.sh — End-to-end StyleTTS2 voice synthesis test
 #
 # Usage:
 #   bash tests/test.sh [OPTIONS]
@@ -9,27 +9,22 @@
 #   --output-dir DIR      Output directory   (default: /kaggle/working/voice_tests
 #                                             or ./output/voice_tests if not on Kaggle)
 #   --ref-wav PATH        Reference WAV for voice cloning (default: first .wav in 'voice refs/')
-#                         Cannot be combined with --voice-id.
-#   --voice-id SPEAKER    Use a built-in XTTS2 base speaker instead of a reference WAV.
-#                         Examples: puck  fenrir  "Ana Florence"  "Andrew Chipper"
-#                         Cannot be combined with --ref-wav.
-#   --list-speakers       Print all available built-in XTTS2 speaker IDs and exit.
-#   --language LANG       Language code (default: en)
+#   --diffusion-steps N   StyleTTS2 diffusion steps (default: 5)
+#   --embedding-scale F   StyleTTS2 style intensity (default: 1.0)
 #   --cpu                 Force CPU inference (default: auto-select GPU if available)
 #   --timeout N           Max seconds for synthesis step (default: 600)
 #   --verbose             Show full subprocess output (default: quiet/summary mode)
 #   --help                Show this help and exit
 #
-# Speaker-ID mode (no reference WAV needed):
-#   bash tests/test.sh --voice-id puck --text "Hello world."
-#   bash tests/test.sh --voice-id fenrir --text "Hello world."
-#   bash tests/test.sh --list-speakers           # show all available IDs
-#
 # Voice-cloning mode (provide a reference WAV):
 #   bash tests/test.sh --ref-wav "voice refs/my_voice.wav" --text "Hello."
 #
+# Default voice mode (no reference WAV needed):
+#   bash tests/test.sh --text "Hello world."
+#
 # Legacy flags that are no longer accepted (will fail fast with a clear message):
-#   --ckpt, --ckpt-name, --voice-model, --voice-index, --no-rvc,
+#   --voice-id, --list-speakers (XTTS2 built-in speakers — removed)
+#   --ckpt, --ckpt-name, --voice-model, --voice-index, --no-rvc (RVC — removed)
 #   --config (old RVC YAML), --pitch, --method, --timeout-tts, --timeout-rvc
 #
 # Output modes:
@@ -43,13 +38,15 @@
 #   the notebook cell never appears silent.  Python is run with -u
 #   (unbuffered) so output streams to the cell in real time.
 #
-# Run 'bash setup_kaggle.sh' to install all XTTS2 dependencies.
+# Run 'bash setup_kaggle.sh' to install all StyleTTS2 dependencies.
+#
+# Migration note: XTTS2 removed by user request. RVC removed.
 
 set -euo pipefail
 
 # ── Defaults ──────────────────────────────────────────────────────────────────
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-ENV_XTTS2="bulul-xtts2"
+ENV_STYLETTS2="bulul-styletts2"
 MINICONDA_DIR="${HOME}/miniconda3"
 LOG_DIR="$REPO_ROOT/runtime/logs"
 TEST_LOG="$LOG_DIR/test.log"
@@ -60,15 +57,11 @@ DEFAULT_OUTPUT_DIR="/kaggle/working/voice_tests"
 TEXT="Welcome to the Bulul podcast. Today we explore the intersection of technology and everyday life, with clear insights and practical takeaways for every listener."
 OUTPUT_DIR="$DEFAULT_OUTPUT_DIR"
 REF_WAV=""
-VOICE_ID=""
-LIST_SPEAKERS=0
-LANGUAGE="en"
+DIFFUSION_STEPS=5
+EMBEDDING_SCALE="1.0"
 USE_CPU=0
 TIMEOUT=600
 VERBOSE=0
-
-# ── Legacy flags — fail fast ──────────────────────────────────────────────────
-_LEGACY_FLAGS=(--ckpt --ckpt-name --voice-model --voice-index --no-rvc --pitch --method --timeout-tts --timeout-rvc)
 
 # ── Logging helpers ───────────────────────────────────────────────────────────
 log()  { echo "[test] $*"; }
@@ -96,36 +89,38 @@ run_q() {
 # ── Parse arguments ───────────────────────────────────────────────────────────
 while [[ $# -gt 0 ]]; do
     case "$1" in
-        --text)         TEXT="$2";         shift 2 ;;
-        --output-dir)   OUTPUT_DIR="$2";   shift 2 ;;
-        --ref-wav)      REF_WAV="$2";      shift 2 ;;
-        --voice-id)     VOICE_ID="$2";     shift 2 ;;
-        --list-speakers) LIST_SPEAKERS=1;  shift   ;;
-        --language)     LANGUAGE="$2";     shift 2 ;;
-        --cpu)          USE_CPU=1;         shift   ;;
-        --timeout)      TIMEOUT="$2";      shift 2 ;;
-        --verbose|-v)   VERBOSE=1;         shift   ;;
+        --text)            TEXT="$2";             shift 2 ;;
+        --output-dir)      OUTPUT_DIR="$2";       shift 2 ;;
+        --ref-wav)         REF_WAV="$2";          shift 2 ;;
+        --diffusion-steps) DIFFUSION_STEPS="$2";  shift 2 ;;
+        --embedding-scale) EMBEDDING_SCALE="$2";  shift 2 ;;
+        --cpu)             USE_CPU=1;             shift   ;;
+        --timeout)         TIMEOUT="$2";          shift 2 ;;
+        --verbose|-v)      VERBOSE=1;             shift   ;;
         --help)
             sed -n '3,/^set -/p' "${BASH_SOURCE[0]}" | grep '^#' | sed 's/^# \?//'
             exit 0
             ;;
+        --voice-id|--list-speakers)
+            die "Legacy flag '$1' is not supported. XTTS2 built-in speakers have been removed." \
+                "This project now uses StyleTTS2 with reference-WAV voice cloning." \
+                "Use --ref-wav 'voice refs/my_voice.wav' for voice cloning," \
+                "or omit --ref-wav to use the StyleTTS2 default voice." \
+                "Run 'bash tests/test.sh --help' for current options."
+            ;;
         --ckpt|--ckpt-name|--voice-model|--voice-index|--no-rvc|--pitch|--method|--timeout-tts|--timeout-rvc)
-            die "Legacy flag '$1' is not supported. This project is XTTS2-only." \
-                "Use --voice-id puck (built-in speaker) or --ref-wav 'voice refs/my_voice.wav' for cloning." \
+            die "Legacy flag '$1' is not supported. RVC has been removed from this project." \
+                "Use --ref-wav 'voice refs/my_voice.wav' for StyleTTS2 voice cloning." \
                 "Run 'bash tests/test.sh --help' for current options."
             ;;
         --config)
-            die "The --config (RVC YAML) flag is not supported. This project is XTTS2-only." \
-                "Use --voice-id puck (built-in speaker) or --ref-wav 'voice refs/my_voice.wav' for cloning." \
+            die "The --config (RVC YAML) flag is not supported. RVC has been removed." \
+                "Use --ref-wav 'voice refs/my_voice.wav' for StyleTTS2 voice cloning." \
                 "Run 'bash tests/test.sh --help' for current options."
             ;;
         *) die "Unknown argument: $1" ;;
     esac
 done
-
-if [ -n "$REF_WAV" ] && [ -n "$VOICE_ID" ]; then
-    die "--ref-wav and --voice-id are mutually exclusive. Use one or the other."
-fi
 
 # ── Set up log file ───────────────────────────────────────────────────────────
 mkdir -p "$LOG_DIR" "$OUTPUT_DIR"
@@ -150,28 +145,24 @@ _ENV_RUNNER=""   # "conda" | "micromamba" | "" (direct python fallback)
 _CONDA_EXE=""    # absolute path to conda executable (set when _ENV_RUNNER=conda)
 
 # Prefer the explicit Miniconda binary to avoid PATH-dependent conda ambiguity.
-# On Kaggle this is /root/miniconda3/bin/conda; on other machines it may still
-# need the profile.d sourcing, so we try both.
 if [ -x "$MINICONDA_DIR/bin/conda" ]; then
     _CONDA_EXE="$MINICONDA_DIR/bin/conda"
-    # Source conda.sh so the shell's `conda activate` helper is also available,
-    # but always use the resolved $_CONDA_EXE for subprocess calls.
     # shellcheck source=/dev/null
     [ -f "$MINICONDA_DIR/etc/profile.d/conda.sh" ] && source "$MINICONDA_DIR/etc/profile.d/conda.sh" || true
-    if "$_CONDA_EXE" env list 2>/dev/null | grep -qE "^${ENV_XTTS2}[[:space:]]"; then
+    if "$_CONDA_EXE" env list 2>/dev/null | grep -qE "^${ENV_STYLETTS2}[[:space:]]"; then
         _ENV_RUNNER="conda"
     fi
 elif [ -f "$MINICONDA_DIR/etc/profile.d/conda.sh" ]; then
     # shellcheck source=/dev/null
     source "$MINICONDA_DIR/etc/profile.d/conda.sh"
-    if conda env list 2>/dev/null | grep -qE "^${ENV_XTTS2}[[:space:]]"; then
+    if conda env list 2>/dev/null | grep -qE "^${ENV_STYLETTS2}[[:space:]]"; then
         _ENV_RUNNER="conda"
         _CONDA_EXE="$(command -v conda 2>/dev/null || true)"
     fi
 fi
 
 if [ -z "$_ENV_RUNNER" ] && command -v micromamba >/dev/null 2>&1; then
-    if micromamba env list 2>/dev/null | grep -qE "^${ENV_XTTS2}[[:space:]]"; then
+    if micromamba env list 2>/dev/null | grep -qE "^${ENV_STYLETTS2}[[:space:]]"; then
         _ENV_RUNNER="micromamba"
     fi
 fi
@@ -185,42 +176,38 @@ python_cmd() {
     esac
 }
 
-XTTS2_PYTHON_CMD="$(python_cmd "$ENV_XTTS2")"
+STYLETTS2_PYTHON_CMD="$(python_cmd "$ENV_STYLETTS2")"
 
 if [ -n "$_ENV_RUNNER" ]; then
     log "Env runner : $_ENV_RUNNER"
     log "Conda exe  : ${_CONDA_EXE:-<from PATH>}"
-    log "XTTS2 env  : $ENV_XTTS2"
-    # Diagnostic: print the Python interpreter that will be used for synthesis.
-    _SYNTH_PYTHON="$($_CONDA_EXE run -n "$ENV_XTTS2" python -c 'import sys; print(sys.executable)' 2>/dev/null || true)"
+    log "StyleTTS2 env : $ENV_STYLETTS2"
+    _SYNTH_PYTHON="$($_CONDA_EXE run -n "$ENV_STYLETTS2" python -c 'import sys; print(sys.executable)' 2>/dev/null || true)"
     [ -n "$_SYNTH_PYTHON" ] && log "Python exe : $_SYNTH_PYTHON"
 else
-    warn "No working conda/micromamba env runner found for '$ENV_XTTS2'."
+    warn "No working conda/micromamba env runner found for '$ENV_STYLETTS2'."
     warn "  Falling back to system python — ensure all deps are installed."
-    warn "  To set up the XTTS2 environment, run: bash setup_kaggle.sh"
+    warn "  To set up the StyleTTS2 environment, run: bash setup_kaggle.sh"
 fi
 
-# ── Preflight: verify pkg_resources + TTS are importable in the runner env ────
-# This surfaces missing-setuptools failures before the 600-second synthesis
-# timeout, with a clear fix message instead of a buried log entry.
+# ── Preflight: verify styletts2 is importable in the runner env ───────────────
+# This surfaces missing-package failures before the long synthesis timeout.
 if [ -n "$_ENV_RUNNER" ]; then
-    log "Preflight: checking pkg_resources + TTS importable in '$ENV_XTTS2'…"
+    log "Preflight: checking styletts2 importable in '$ENV_STYLETTS2'…"
     PREFLIGHT_EXIT=0
-    $XTTS2_PYTHON_CMD -c \
-        "import pkg_resources, TTS; print('[preflight] pkg_resources + TTS OK')" \
+    $STYLETTS2_PYTHON_CMD -c \
+        "from styletts2 import tts; print('[preflight] styletts2 OK')" \
         >> "$TEST_LOG" 2>&1 || PREFLIGHT_EXIT=$?
     if [ "$PREFLIGHT_EXIT" -ne 0 ]; then
-        fail "Preflight FAILED — pkg_resources or TTS not importable in '$ENV_XTTS2'"
+        fail "Preflight FAILED — styletts2 not importable in '$ENV_STYLETTS2'"
         fail "  Python interpreter: ${_SYNTH_PYTHON:-unknown}"
-        fail "  Fix by running in your Kaggle notebook:"
-        fail "    ${_CONDA_EXE:-conda} run -n $ENV_XTTS2 python -m pip install -U pip setuptools wheel"
-        fail "    ${_CONDA_EXE:-conda} run -n $ENV_XTTS2 pip install --no-cache-dir TTS==0.22.0"
-        fail "  Or re-run: bash setup_kaggle.sh"
+        fail "  Fix by running: bash setup_kaggle.sh"
+        fail "  Or manually: ${_CONDA_EXE:-conda} run -n $ENV_STYLETTS2 pip install styletts2"
         fail "  Log: $TEST_LOG"
         tail -n 20 "$TEST_LOG" >&2 || true
         exit 1
     fi
-    ok "Preflight passed: pkg_resources + TTS importable in '$ENV_XTTS2'"
+    ok "Preflight passed: styletts2 importable in '$ENV_STYLETTS2'"
 fi
 
 # ── Environment variables ─────────────────────────────────────────────────────
@@ -234,118 +221,88 @@ case "${MPLBACKEND:-}" in
 esac
 log "Runtime: MPLBACKEND=$MPLBACKEND"
 
-# ── Resolve reference WAV (only when not using voice-id) ─────────────────────
+# ── Resolve reference WAV ─────────────────────────────────────────────────────
 VOICE_REFS_DIR="$REPO_ROOT/voice refs"
-if [ -z "$REF_WAV" ] && [ -z "$VOICE_ID" ]; then
-    # Auto-detect first WAV in 'voice refs/' (only when no voice-id given)
+if [ -z "$REF_WAV" ]; then
     FOUND_WAV=$(find "$VOICE_REFS_DIR" -maxdepth 1 -name "*.wav" | sort | head -1 2>/dev/null || true)
     if [ -n "$FOUND_WAV" ]; then
         REF_WAV="$FOUND_WAV"
         log "Ref WAV    : $REF_WAV (auto-detected)"
     else
         warn "No reference WAV provided and none found in 'voice refs/'."
-        warn "  XTTS2 will use a built-in default speaker."
+        warn "  StyleTTS2 will use its default voice."
         warn "  For voice cloning: place a .wav file in 'voice refs/' or use --ref-wav."
-        warn "  For a base speaker: use --voice-id puck  (or --voice-id fenrir, etc.)"
     fi
 fi
 
 # ── Summary ───────────────────────────────────────────────────────────────────
-log "===== Bulul XTTS2 voice test ====="
-log "Output dir  : $OUTPUT_DIR"
-log "Language    : $LANGUAGE"
-log "Device      : $([ "$USE_CPU" -eq 1 ] && echo 'cpu (--cpu)' || echo 'auto (GPU if available)')"
+log "===== Bulul StyleTTS2 voice test ====="
+log "Output dir       : $OUTPUT_DIR"
+log "Diffusion steps  : $DIFFUSION_STEPS"
+log "Embedding scale  : $EMBEDDING_SCALE"
+log "Device           : $([ "$USE_CPU" -eq 1 ] && echo 'cpu (--cpu)' || echo 'auto (GPU if available)')"
 if [ "${#TEXT}" -gt 60 ]; then
-    log "Text        : ${TEXT:0:60}…"
+    log "Text             : ${TEXT:0:60}…"
 else
-    log "Text        : $TEXT"
+    log "Text             : $TEXT"
 fi
-if [ -n "$VOICE_ID" ]; then
-    log "Voice ID    : $VOICE_ID (built-in speaker)"
-elif [ -n "$REF_WAV" ]; then
-    log "Ref WAV     : $REF_WAV"
+if [ -n "$REF_WAV" ]; then
+    log "Ref WAV          : $REF_WAV"
 else
-    log "Ref WAV     : (none — auto-detect or built-in fallback)"
+    log "Ref WAV          : (none — using StyleTTS2 default voice)"
 fi
-log "=================================="
+log "======================================"
 
-# ── Step 1: Handle --list-speakers early ─────────────────────────────────────
-if [ "$LIST_SPEAKERS" -eq 1 ]; then
-    log "1/1 Listing built-in XTTS2 speakers…"
-    heartbeat_start
-    LS_EXIT=0
-    timeout "$TIMEOUT" \
-        $XTTS2_PYTHON_CMD -u "$REPO_ROOT/scripts/synthesize.py" \
-            --list-speakers \
-        >> "$TEST_LOG" 2>&1 || LS_EXIT=$?
-    heartbeat_stop
-    if [ "$LS_EXIT" -eq 124 ]; then
-        die "Timed out listing speakers after ${TIMEOUT}s"
-    elif [ "$LS_EXIT" -ne 0 ]; then
-        die "Failed to list speakers (exit code $LS_EXIT)"
-    fi
-    # Print the speaker list from the log to stdout
-    grep '^\[synthesize\]' "$TEST_LOG" | sed 's/^\[synthesize\] //'
-    ok "Speaker list complete."
-    exit 0
-fi
-
-# ── Step 2: Validate reference WAV (if provided) ──────────────────────────────
+# ── Step 1: Validate reference WAV (if provided) ──────────────────────────────
 log "1/2 Checking voice source…"
 if [ -n "$REF_WAV" ]; then
     [ -f "$REF_WAV" ] || die "Reference WAV not found: $REF_WAV  (place .wav files in 'voice refs/')"
     ok "1/2 Reference WAV found: $REF_WAV"
-elif [ -n "$VOICE_ID" ]; then
-    ok "1/2 Using built-in speaker ID: $VOICE_ID"
 else
-    ok "1/2 No voice source specified — will auto-detect or use built-in fallback"
+    ok "1/2 No voice source specified — using StyleTTS2 default voice"
 fi
 
-# ── Step 2 (continued): XTTS2 synthesis ──────────────────────────────────────
-SYNTH_OUTPUT="$OUTPUT_DIR/xtts2_output.wav"
+# ── Step 2: StyleTTS2 synthesis ───────────────────────────────────────────────
+SYNTH_OUTPUT="$OUTPUT_DIR/styletts2_output.wav"
 
 SYNTH_ARGS=(
     --text    "$TEXT"
     --output  "$SYNTH_OUTPUT"
-    --language "$LANGUAGE"
+    --diffusion-steps "$DIFFUSION_STEPS"
+    --embedding-scale "$EMBEDDING_SCALE"
 )
-[ "$USE_CPU" -eq 1 ]   && SYNTH_ARGS+=(--cpu)
-[ -n "$REF_WAV" ]      && SYNTH_ARGS+=(--ref-wav "$REF_WAV")
-[ -n "$VOICE_ID" ]     && SYNTH_ARGS+=(--voice-id "$VOICE_ID")
+[ "$USE_CPU" -eq 1 ] && SYNTH_ARGS+=(--cpu)
+[ -n "$REF_WAV" ]    && SYNTH_ARGS+=(--ref-wav "$REF_WAV")
 
 _device_note=""
 [ "$USE_CPU" -eq 1 ] && _device_note=", CPU mode"
-if [ -n "$VOICE_ID" ]; then
-    log "2/2 Synthesising with XTTS2 speaker '$VOICE_ID' (max ${TIMEOUT}s${_device_note})…"
-else
-    log "2/2 Synthesising with XTTS2 (max ${TIMEOUT}s${_device_note})…"
-fi
+log "2/2 Synthesising with StyleTTS2 (max ${TIMEOUT}s${_device_note})…"
 
 heartbeat_start
 
 SYNTH_EXIT=0
 timeout "$TIMEOUT" \
-    $XTTS2_PYTHON_CMD -u "$REPO_ROOT/scripts/synthesize.py" \
+    $STYLETTS2_PYTHON_CMD -u "$REPO_ROOT/scripts/synthesize.py" \
         "${SYNTH_ARGS[@]}" \
     >> "$TEST_LOG" 2>&1 || SYNTH_EXIT=$?
 
 heartbeat_stop
 
 if [ "$SYNTH_EXIT" -eq 124 ]; then
-    die "XTTS2 synthesis timed out after ${TIMEOUT}s"
+    die "StyleTTS2 synthesis timed out after ${TIMEOUT}s"
 elif [ "$SYNTH_EXIT" -ne 0 ]; then
-    die "XTTS2 synthesis failed (exit code $SYNTH_EXIT)"
+    die "StyleTTS2 synthesis failed (exit code $SYNTH_EXIT)"
 fi
 
-[ -f "$SYNTH_OUTPUT" ] || die "XTTS2 output not created: $SYNTH_OUTPUT"
+[ -f "$SYNTH_OUTPUT" ] || die "StyleTTS2 output not created: $SYNTH_OUTPUT"
 SYNTH_SIZE=$(wc -c < "$SYNTH_OUTPUT")
-ok "2/2 xtts2_output.wav (${SYNTH_SIZE} bytes)"
+ok "2/2 styletts2_output.wav (${SYNTH_SIZE} bytes)"
 
 # ── Done ──────────────────────────────────────────────────────────────────────
 echo ""
 log "===== Results ====="
-log "  XTTS2 output  : $SYNTH_OUTPUT"
-log "  Output dir    : $OUTPUT_DIR"
+log "  StyleTTS2 output : $SYNTH_OUTPUT"
+log "  Output dir       : $OUTPUT_DIR"
 log "=================="
 
 ok "All steps passed."

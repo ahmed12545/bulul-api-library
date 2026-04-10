@@ -4,8 +4,8 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-# The API uses XTTS2; run it inside the bulul-xtts2 env.
-CONDA_ENV_NAME="bulul-xtts2"
+# The API uses StyleTTS2; run it inside the bulul-styletts2 env.
+CONDA_ENV_NAME="bulul-styletts2"
 MINICONDA_DIR="$HOME/miniconda3"
 APP_PORT="${APP_PORT:-8000}"
 
@@ -79,7 +79,7 @@ log "   Health check    : $PUBLIC_URL/health"
 log "   Podcast endpoint: $PUBLIC_URL/generate-podcast"
 log ""
 log "Press Ctrl+C to stop."
-log "NOTE: If this is the first run, XTTS2 may take several minutes to load."
+log "NOTE: If this is the first run, StyleTTS2 may take a minute to load."
 
 # ── 8. Wait and handle shutdown ───────────────────────────────────────────────
 cleanup() {
