@@ -68,6 +68,12 @@ def main() -> None:
         default=1.0,
         help="Embedding scale / style strength (default: 1.0)",
     )
+    parser.add_argument(
+        "--cpu",
+        action="store_true",
+        default=False,
+        help="Force CPU inference even when a GPU is available (default: auto-select GPU)",
+    )
     args = parser.parse_args()
 
     log(f"{'MPLBACKEND':<35}: {os.environ.get('MPLBACKEND')}")
@@ -104,10 +110,15 @@ def main() -> None:
     log("Importing torch…")
     import torch  # noqa: F401
 
-    device = "cuda" if torch.cuda.is_available() else "cpu"
-    log(f"Device: {device}")
-    if device == "cuda":
-        log(f"GPU: {torch.cuda.get_device_name(0)}")
+    if args.cpu:
+        device = "cpu"
+        log("Device: cpu (--cpu flag set; GPU bypassed)")
+    elif torch.cuda.is_available():
+        device = "cuda"
+        log(f"Device: cuda (GPU: {torch.cuda.get_device_name(0)})")
+    else:
+        device = "cpu"
+        log("Device: cpu (no CUDA-capable GPU detected)")
 
     log("Importing StyleTTS2…")
     try:

@@ -4,9 +4,13 @@
 # Idempotent: safe to run multiple times.
 #
 # Environment variables (set by setup_kaggle.sh):
-#   BULUL_ENV_RVC    — name of the conda env for RVC (default: bulul-rvc)
-#   BULUL_VERBOSE    — 1 for verbose output, 0 for quiet (default: 0)
-#   MINICONDA_DIR    — path to Miniconda (default: $HOME/miniconda3)
+#   BULUL_ENV_RVC           — name of the conda env for RVC (default: bulul-rvc)
+#   BULUL_VERBOSE           — 1 for verbose output, 0 for quiet (default: 0)
+#   MINICONDA_DIR           — path to Miniconda (default: $HOME/miniconda3)
+#   STYLETTS2_CHECKPOINTS   — comma-separated list of checkpoint labels to
+#                             download (default: "ljspeech,libri"; max 5).
+#                             Valid labels: ljspeech, libri
+#                             Example: STYLETTS2_CHECKPOINTS="ljspeech" bash download_models.sh
 #
 # StyleTTS2 has no setup.py/pyproject.toml so it cannot be pip-installed as a
 # package.  Instead we clone the source tree and install its requirements.
@@ -85,44 +89,110 @@ run_q python -m pip install --quiet "styletts2==0.1.6" "einops_exts" || \
     warn "styletts2/einops_exts install had warnings — synthesis may fail. See $DL_LOG"
 log_v "  styletts2 pip package installed"
 
-# ── Pretrained checkpoint (LJSpeech single-speaker, ~0.5 GB) ─────────────────
-log "Step 3/8 Checking StyleTTS2 checkpoint…"
-CKPT_URL="https://huggingface.co/yl4579/StyleTTS2-LJSpeech/resolve/main/Models/LJSpeech/epoch_2nd_00100.pth"
-CKPT_FILE="$MODELS_DIR/epoch_2nd_00100.pth"
+# ── StyleTTS2 voice checkpoint catalog ───────────────────────────────────────
+# Each entry describes one TTS voice checkpoint (NOT ASR/PLBERT utility weights;
+# those are downloaded automatically by the styletts2 pip package and are not
+# selectable voice checkpoints for A/B testing).
+#
+# Format: "LABEL|CKPT_URL|CONFIG_URL|CKPT_FILENAME|CONFIG_FILENAME"
+#
+# To add more checkpoints (up to the 5-slot cap) append a new row below.
+CKPT_CATALOG=(
+    "ljspeech|https://huggingface.co/yl4579/StyleTTS2-LJSpeech/resolve/main/Models/LJSpeech/epoch_2nd_00100.pth|https://huggingface.co/yl4579/StyleTTS2-LJSpeech/resolve/main/Models/LJSpeech/config.yml|epoch_2nd_00100.pth|config.yml"
+    "libri|https://huggingface.co/yl4579/StyleTTS2-LibriTTS/resolve/main/Models/LibriTTS/epochs_2nd_00020.pth|https://huggingface.co/yl4579/StyleTTS2-LibriTTS/resolve/main/Models/LibriTTS/config.yml|epoch_2nd_00020_libri.pth|config_libri.yml"
+)
 
-if [ -f "$CKPT_FILE" ]; then
-    log_v "  Checkpoint already present — skipping download"
-else
-    log "  Downloading StyleTTS2 LJSpeech checkpoint (~0.5 GB)…"
-    run_q wget --continue --tries=3 --timeout=120 --quiet \
-        "$CKPT_URL" -O "$CKPT_FILE" || \
-        die "Failed to download checkpoint after retries"
-    log_v "  Checkpoint saved to $CKPT_FILE"
+# Which checkpoints to install: comma-separated labels from CKPT_CATALOG.
+# Default: install both available voice checkpoints.
+# Override at runtime:  STYLETTS2_CHECKPOINTS="ljspeech" bash download_models.sh
+# Or via setup_kaggle:  bash setup_kaggle.sh --checkpoints ljspeech
+STYLETTS2_CHECKPOINTS="${STYLETTS2_CHECKPOINTS:-ljspeech,libri}"
+
+# Parse requested labels into an array and cap at 5
+IFS=',' read -ra _DESIRED_CKPTS <<< "$STYLETTS2_CHECKPOINTS"
+DESIRED_CKPTS=()
+for _lbl in "${_DESIRED_CKPTS[@]}"; do
+    _lbl="${_lbl//[[:space:]]/}"   # trim whitespace
+    [ -n "$_lbl" ] && DESIRED_CKPTS+=("$_lbl")
+done
+if [ "${#DESIRED_CKPTS[@]}" -gt 5 ]; then
+    warn "More than 5 checkpoints requested — capping at 5."
+    DESIRED_CKPTS=("${DESIRED_CKPTS[@]:0:5}")
 fi
 
-# ── Model config ──────────────────────────────────────────────────────────────
-log "Step 4/8 Checking StyleTTS2 model config…"
-CONFIG_URL="https://huggingface.co/yl4579/StyleTTS2-LJSpeech/resolve/main/Models/LJSpeech/config.yml"
-CONFIG_FILE="$MODELS_DIR/config.yml"
+log "Step 3/8 Checking StyleTTS2 checkpoint(s): ${DESIRED_CKPTS[*]}"
 
-if [ -f "$CONFIG_FILE" ]; then
-    log_v "  Config already present — skipping download"
-else
-    log "  Downloading model config…"
-    run_q wget --continue --tries=3 --timeout=60 --quiet \
-        "$CONFIG_URL" -O "$CONFIG_FILE" || die "Failed to download config"
-    log_v "  Config saved to $CONFIG_FILE"
-fi
+# Track the first successfully-resolved checkpoint for backward-compat aliases
+PRIMARY_CKPT_FILE=""
+PRIMARY_CONFIG_FILE=""
 
-# ── Validate all required StyleTTS2 artifacts ─────────────────────────────────
+for _req_label in "${DESIRED_CKPTS[@]}"; do
+    _found=0
+    for _entry in "${CKPT_CATALOG[@]}"; do
+        IFS='|' read -r _lbl _ckpt_url _cfg_url _ckpt_fname _cfg_fname <<< "$_entry"
+        if [ "$_lbl" = "$_req_label" ]; then
+            _found=1
+            _ckpt_path="$MODELS_DIR/$_ckpt_fname"
+            _cfg_path="$MODELS_DIR/$_cfg_fname"
+
+            # Checkpoint file
+            if [ -f "$_ckpt_path" ]; then
+                log_v "  [$_req_label] Checkpoint already present — skipping"
+            else
+                log "  [$_req_label] Downloading checkpoint…"
+                run_q wget --continue --tries=3 --timeout=120 --quiet \
+                    "$_ckpt_url" -O "$_ckpt_path" || \
+                    die "Failed to download [$_req_label] checkpoint"
+                log_v "  [$_req_label] Checkpoint saved to $_ckpt_path"
+            fi
+
+            # Config file
+            if [ -f "$_cfg_path" ]; then
+                log_v "  [$_req_label] Config already present — skipping"
+            else
+                log "  [$_req_label] Downloading config…"
+                run_q wget --continue --tries=3 --timeout=60 --quiet \
+                    "$_cfg_url" -O "$_cfg_path" || \
+                    die "Failed to download [$_req_label] config"
+                log_v "  [$_req_label] Config saved to $_cfg_path"
+            fi
+
+            # Record primary (first) checkpoint for validation and backward compat
+            if [ -z "$PRIMARY_CKPT_FILE" ]; then
+                PRIMARY_CKPT_FILE="$_ckpt_path"
+                PRIMARY_CONFIG_FILE="$_cfg_path"
+            fi
+            break
+        fi
+    done
+
+    if [ "$_found" -eq 0 ]; then
+        _valid_labels=""
+        for _entry in "${CKPT_CATALOG[@]}"; do
+            IFS='|' read -r _lbl _ _ _ _ <<< "$_entry"
+            _valid_labels="$_valid_labels $_lbl"
+        done
+        warn "  Unknown checkpoint label '$_req_label' — skipping. Valid labels:$_valid_labels"
+    fi
+done
+
+# Backward-compat: CKPT_FILE / CONFIG_FILE point to the primary checkpoint
+# (preserves any code that still references these variables downstream).
+CKPT_FILE="${PRIMARY_CKPT_FILE:-$MODELS_DIR/epoch_2nd_00100.pth}"
+CONFIG_FILE="${PRIMARY_CONFIG_FILE:-$MODELS_DIR/config.yml}"
+
+# ── Validate required StyleTTS2 artifacts ─────────────────────────────────────
 log "Step 5/8 Validating StyleTTS2 artifacts…"
 [ -d "$STYLETTS2_SRC/.git" ] || die "StyleTTS2 source missing at $STYLETTS2_SRC"
-[ -f "$CKPT_FILE" ]          || die "Checkpoint missing at $CKPT_FILE"
-[ -f "$CONFIG_FILE" ]        || die "Config missing at $CONFIG_FILE"
+[ -f "$CKPT_FILE" ]          || die "Primary checkpoint missing at $CKPT_FILE"
+[ -f "$CONFIG_FILE" ]        || die "Primary config missing at $CONFIG_FILE"
 ok "StyleTTS2 artifacts ready"
-log_v "   StyleTTS2 source : $STYLETTS2_SRC"
-log_v "   Checkpoint       : $CKPT_FILE"
-log_v "   Config           : $CONFIG_FILE"
+log_v "   StyleTTS2 source   : $STYLETTS2_SRC"
+log_v "   Primary checkpoint : $CKPT_FILE"
+log_v "   Primary config     : $CONFIG_FILE"
+if [ "${#DESIRED_CKPTS[@]}" -gt 1 ]; then
+    log_v "   All checkpoints    : ${DESIRED_CKPTS[*]} (in $MODELS_DIR)"
+fi
 
 # ── RVC source (clone) ────────────────────────────────────────────────────────
 RVC_SRC="$SCRIPT_DIR/models/RVC"
