@@ -125,14 +125,17 @@ ok "Conda env ready: $ENV_STYLETTS2"
 #
 # Stage C: All StyleTTS2 runtime deps from requirements-styletts2.txt
 #   (phonemizer, librosa, soundfile, scipy, numpy, transformers,
-#    huggingface_hub>=0.20, munch, pyyaml, …).
+#    huggingface_hub>=0.20, nltk, gruut, einops, accelerate, …).
 #   NOTE: styletts2 itself is intentionally NOT in requirements-styletts2.txt
-#   because it pins huggingface_hub==0.19.4 which conflicts with the >=0.20
+#   because it pins huggingface_hub<0.20 which conflicts with the >=0.20
 #   constraint required by the rest of the stack.
 #
 # Stage D: styletts2 itself, installed with --no-deps so its huggingface_hub
 #   pin is skipped. All of its actual runtime deps are already installed in
 #   Stage C, so this is safe.
+#
+# Stage E: Bootstrap NLTK tokenizer data (punkt_tab) required by
+#   styletts2.tts at import time. Must happen after Stage C installs nltk.
 log "Step 5/6 Installing deps in '$ENV_STYLETTS2'…"
 REQS_STYLETTS2="$SCRIPT_DIR/requirements-styletts2.txt"
 [ -f "$REQS_STYLETTS2" ] || die "requirements-styletts2.txt not found at $REQS_STYLETTS2"
@@ -155,6 +158,11 @@ log_v "  Stage D: installing styletts2 package (--no-deps to skip huggingface_hu
 run_q "$CONDA_EXE" run -n "$ENV_STYLETTS2" pip install --quiet --no-cache-dir \
     --no-deps "styletts2>=0.1,<2.0" || \
     die "pip install styletts2 --no-deps failed in '$ENV_STYLETTS2'"
+
+log_v "  Stage E: downloading NLTK tokenizer data (punkt_tab required by styletts2.tts)…"
+run_q "$CONDA_EXE" run -n "$ENV_STYLETTS2" python -c \
+    "import nltk; nltk.download('punkt_tab', quiet=True); nltk.download('averaged_perceptron_tagger_eng', quiet=True); print('NLTK data ready')" || \
+    warn "NLTK data download failed — synthesis may fail. Re-run 'bash setup_kaggle.sh' or manually: python -c \"import nltk; nltk.download('punkt_tab')\""
 
 # ── 6b. Register env as a Jupyter/Kaggle kernel (optional, non-fatal) ─────────
 run_q "$CONDA_EXE" run -n "$ENV_STYLETTS2" python -m ipykernel install \
